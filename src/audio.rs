@@ -6,6 +6,11 @@ use std::sync::{Arc, Mutex};
 pub const FFT_SIZE: usize = 1024;
 const BEAT_THRESHOLD: f32 = 1.4;
 const BEAT_DECAY: f32 = 0.95;
+const NOISE_FLOOR: f32 = 1e-5; // gate out hiss below this RMS
+const ATTACK: f32 = 0.6;       // EMA rise speed (0-1, higher = snappier)
+const RELEASE: f32 = 0.12;     // EMA fall speed (0-1, higher = faster decay)
+const AGC_ATTACK: f32 = 0.02;  // auto-gain rises slowly
+const AGC_RELEASE: f32 = 0.001; // auto-gain falls very slowly (holds peaks)
 
 /// Which two channels to capture from the audio device.
 #[derive(Debug, Clone, Copy)]
@@ -50,18 +55,22 @@ pub struct ChannelAnalysis {
 
 /// Raw audio analysis data shared between audio thread and render thread.
 pub struct AudioData {
-    // Combined (average of L+R)
+    // Combined (average of L+R) — smoothed, auto-gained
     pub amplitude: f32,
     pub beat: f32,
     pub bass: f32,
     pub mid: f32,
     pub high: f32,
     pub spectrum: Vec<f32>,
-    // Per-channel stereo
+    // Per-channel stereo — smoothed, auto-gained
     pub left: ChannelAnalysis,
     pub right: ChannelAnalysis,
-    // Internal state for beat detection
+    // Internal state
     energy_avg: f32,
+    peak_amplitude: f32, // running peak for auto-gain
+    peak_bass: f32,
+    peak_mid: f32,
+    peak_high: f32,
 }
 
 impl Default for AudioData {
@@ -77,8 +86,33 @@ impl Default for AudioData {
             left: ChannelAnalysis { spectrum: vec![0.0; half], ..Default::default() },
             right: ChannelAnalysis { spectrum: vec![0.0; half], ..Default::default() },
             energy_avg: 0.0,
+            peak_amplitude: 0.01,
+            peak_bass: 0.01,
+            peak_mid: 0.01,
+            peak_high: 0.01,
         }
     }
+}
+
+/// Asymmetric EMA: fast attack, slow release — values jump up quickly but decay smoothly.
+fn smooth(current: f32, target: f32) -> f32 {
+    let alpha = if target > current { ATTACK } else { RELEASE };
+    current + alpha * (target - current)
+}
+
+/// Update auto-gain peak tracker. Rises to meet signal, decays very slowly.
+fn update_peak(peak: &mut f32, value: f32) {
+    if value > *peak {
+        *peak += AGC_ATTACK * (value - *peak);
+    } else {
+        *peak += AGC_RELEASE * (value - *peak);
+    }
+    *peak = peak.max(0.01); // never zero — avoid division by zero
+}
+
+/// Normalize a value against a running peak, clamped to 0..1.
+fn auto_gain(value: f32, peak: f32) -> f32 {
+    (value / peak).min(1.0)
 }
 
 pub type SharedAudioData = Arc<Mutex<AudioData>>;
@@ -144,7 +178,6 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
             let mut window_r = vec![0.0f32; FFT_SIZE];
             let mut fft_buf_l = vec![Complex::default(); FFT_SIZE];
             let mut fft_buf_r = vec![Complex::default(); FFT_SIZE];
-
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(8)); // ~120Hz analysis
 
@@ -167,34 +200,84 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
                     window_r[i] = r * w;
                 }
 
-                // Analyze both channels
-                let left = analyze_channel(&fft, &mut scratch, &window_l, &mut fft_buf_l, sample_rate);
-                let right = analyze_channel(&fft, &mut scratch, &window_r, &mut fft_buf_r, sample_rate);
+                // Analyze both channels (raw)
+                let raw_l = analyze_channel(&fft, &mut scratch, &window_l, &mut fft_buf_l, sample_rate);
+                let raw_r = analyze_channel(&fft, &mut scratch, &window_r, &mut fft_buf_r, sample_rate);
 
-                // Combined (average)
-                let amplitude = (left.amplitude + right.amplitude) * 0.5;
-                let bass = (left.bass + right.bass) * 0.5;
-                let mid = (left.mid + right.mid) * 0.5;
-                let high = (left.high + right.high) * 0.5;
+                // Combined raw values
+                let raw_amp = (raw_l.amplitude + raw_r.amplitude) * 0.5;
+                let raw_bass = (raw_l.bass + raw_r.bass) * 0.5;
+                let raw_mid = (raw_l.mid + raw_r.mid) * 0.5;
+                let raw_high = (raw_l.high + raw_r.high) * 0.5;
 
-                let half = FFT_SIZE / 2;
-                let mut spectrum = vec![0.0f32; half];
-                for i in 0..half {
-                    spectrum[i] = (left.spectrum[i] + right.spectrum[i]) * 0.5;
+                // Noise gate
+                if raw_amp < NOISE_FLOOR {
+                    let mut data = shared.lock().unwrap();
+                    // Decay toward zero smoothly
+                    data.amplitude = smooth(data.amplitude, 0.0);
+                    data.bass = smooth(data.bass, 0.0);
+                    data.mid = smooth(data.mid, 0.0);
+                    data.high = smooth(data.high, 0.0);
+                    data.left.amplitude = smooth(data.left.amplitude, 0.0);
+                    data.left.bass = smooth(data.left.bass, 0.0);
+                    data.left.mid = smooth(data.left.mid, 0.0);
+                    data.left.high = smooth(data.left.high, 0.0);
+                    data.right.amplitude = smooth(data.right.amplitude, 0.0);
+                    data.right.bass = smooth(data.right.bass, 0.0);
+                    data.right.mid = smooth(data.right.mid, 0.0);
+                    data.right.high = smooth(data.right.high, 0.0);
+                    data.beat *= BEAT_DECAY;
+                    continue;
                 }
 
-                // Update shared data
-                let mut data = shared.lock().unwrap();
-                data.amplitude = amplitude;
-                data.bass = bass;
-                data.mid = mid;
-                data.high = high;
-                data.spectrum.copy_from_slice(&spectrum);
-                data.left = left;
-                data.right = right;
+                let half = FFT_SIZE / 2;
 
-                // Beat detection on combined signal
-                let energy = bass * 2.0 + mid;
+                // Update auto-gain peaks
+                let mut data = shared.lock().unwrap();
+                update_peak(&mut data.peak_amplitude, raw_amp);
+                update_peak(&mut data.peak_bass, raw_bass);
+                update_peak(&mut data.peak_mid, raw_mid);
+                update_peak(&mut data.peak_high, raw_high);
+
+                // Auto-gain normalize: scale to 0..1 based on recent peaks
+                let norm_amp = auto_gain(raw_amp, data.peak_amplitude);
+                let norm_bass = auto_gain(raw_bass, data.peak_bass);
+                let norm_mid = auto_gain(raw_mid, data.peak_mid);
+                let norm_high = auto_gain(raw_high, data.peak_high);
+
+                // Smooth combined values (fast attack, slow release)
+                data.amplitude = smooth(data.amplitude, norm_amp);
+                data.bass = smooth(data.bass, norm_bass);
+                data.mid = smooth(data.mid, norm_mid);
+                data.high = smooth(data.high, norm_high);
+
+                // Smooth + normalize per-channel
+                let norm_l_amp = auto_gain(raw_l.amplitude, data.peak_amplitude);
+                let norm_r_amp = auto_gain(raw_r.amplitude, data.peak_amplitude);
+                data.left.amplitude = smooth(data.left.amplitude, norm_l_amp);
+                data.right.amplitude = smooth(data.right.amplitude, norm_r_amp);
+                data.left.bass = smooth(data.left.bass, auto_gain(raw_l.bass, data.peak_bass));
+                data.right.bass = smooth(data.right.bass, auto_gain(raw_r.bass, data.peak_bass));
+                data.left.mid = smooth(data.left.mid, auto_gain(raw_l.mid, data.peak_mid));
+                data.right.mid = smooth(data.right.mid, auto_gain(raw_r.mid, data.peak_mid));
+                data.left.high = smooth(data.left.high, auto_gain(raw_l.high, data.peak_high));
+                data.right.high = smooth(data.right.high, auto_gain(raw_r.high, data.peak_high));
+
+                // Spectrum: combine, log-scale, smooth
+                for i in 0..half {
+                    let raw = (raw_l.spectrum[i] + raw_r.spectrum[i]) * 0.5;
+                    // Log scale: map tiny FFT values to visible range
+                    // 20*log10(x) dB, normalized so -60dB..0dB maps to 0..1
+                    let db = if raw > 1e-10 { 20.0 * raw.log10() } else { -120.0 };
+                    let norm = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
+                    // Smooth each bin
+                    data.spectrum[i] = smooth(data.spectrum[i], norm);
+                }
+                data.left.spectrum.copy_from_slice(&raw_l.spectrum);
+                data.right.spectrum.copy_from_slice(&raw_r.spectrum);
+
+                // Beat detection on normalized signal
+                let energy = norm_bass * 2.0 + norm_mid;
                 if energy > data.energy_avg * BEAT_THRESHOLD && data.beat < 0.3 {
                     data.beat = 1.0;
                 } else {
