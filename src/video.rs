@@ -89,10 +89,28 @@ impl VideoOverlay {
         for i in 0..frame_count {
             let start = i * frame_size;
             let end = start + frame_size;
-            frames.push(VideoFrame {
-                rgba: output.stdout[start..end].to_vec(),
-            });
+            let frame_data = output.stdout[start..end].to_vec();
+
+            // If dimensions don't match max_width square, resize to fit
+            // (pad to square for consistent texture uploads)
+            if out_w != max_width || out_h != max_width {
+                let img = image::RgbaImage::from_raw(out_w, out_h, frame_data).unwrap();
+                // Create a black square canvas and paste the frame centered
+                let mut canvas = image::RgbaImage::new(max_width, max_width);
+                let ox = (max_width - out_w) / 2;
+                let oy = (max_width - out_h) / 2;
+                image::imageops::overlay(&mut canvas, &img, ox as i64, oy as i64);
+                frames.push(VideoFrame {
+                    rgba: canvas.into_raw(),
+                });
+            } else {
+                frames.push(VideoFrame { rgba: frame_data });
+            }
         }
+
+        // Override dimensions to be the square canvas
+        let out_w = max_width;
+        let out_h = max_width;
 
         Ok(Self {
             frames,

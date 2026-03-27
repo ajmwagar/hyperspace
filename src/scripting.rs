@@ -92,6 +92,11 @@ impl ShaderScript {
         Ok(())
     }
 
+    /// Set a global variable in the Lua VM (for engine→Lua communication).
+    pub fn set_global(&self, name: &str, value: f32) {
+        let _ = self.lua.globals().set(name, value);
+    }
+
     fn read_state_from_table(&mut self, table: &LuaTable) {
         let len = table.len().unwrap_or(0) as usize;
         let count = len.min(STATE_BUFFER_SIZE);

@@ -845,6 +845,10 @@ impl Renderer {
     pub fn update_scripts(&mut self, uniforms: &scripting::ScriptUniforms) {
         for pipeline in &mut self.pipelines {
             if let Some(ref mut script) = pipeline.script {
+                // Tell Lua how many video clips are loaded
+                if let Some(ref seq) = pipeline.video_sequence {
+                    script.set_global("NUM_CLIPS", seq.videos.len() as f32);
+                }
                 if let Err(e) = script.update(uniforms) {
                     log::error!("lua script error for {}: {}", pipeline.viewport.name, e);
                 }
