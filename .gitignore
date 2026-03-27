@@ -2,3 +2,6 @@
 *.swp
 *.swo
 .DS_Store
+*.mp4
+_estimated_background.png
+tools/
