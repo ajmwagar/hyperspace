@@ -5,8 +5,18 @@ use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub struct SceneConfig {
+    #[serde(default)]
+    pub audio: AudioConfig,
     #[serde(flatten)]
     pub outputs: HashMap<String, OutputConfig>,
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct AudioConfig {
+    /// Audio device name substring to match (e.g. "Scarlett"). Default: system default.
+    pub device: Option<String>,
+    /// Comma-separated channel pair, e.g. "4,5" for loopback. Default: auto-detect.
+    pub channels: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,6 +166,29 @@ symmetric = true
     }
 
     #[test]
+    fn parse_audio_config() {
+        let toml = r#"
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
+[center]
+shader = "shaders/test.wgsl"
+"#;
+        let config = SceneConfig::from_str(toml).unwrap();
+        assert_eq!(config.audio.device.as_deref(), Some("Scarlett"));
+        assert_eq!(config.audio.channels.as_deref(), Some("4,5"));
+        assert!(config.outputs.contains_key("center"));
+    }
+
+    #[test]
+    fn audio_config_defaults_when_missing() {
+        let config = SceneConfig::from_str(DEFAULT_SCENE).unwrap();
+        assert!(config.audio.device.is_none());
+        assert!(config.audio.channels.is_none());
+    }
+
+    #[test]
     fn three_output_viewports() {
         let config = SceneConfig::from_str(DEFAULT_SCENE).unwrap();
         let vps = config.resolve_viewports(LayoutMode::ThreeOutput);
@@ -172,13 +205,11 @@ symmetric = true
 
     #[test]
     fn nine_output_fallback_to_named() {
-        // When no grid_N keys exist, named outputs fill cells left-to-right
         let config = SceneConfig::from_str(DEFAULT_SCENE).unwrap();
         let vps = config.resolve_viewports(LayoutMode::NineOutput);
 
         assert_eq!(vps.len(), 2);
         for vp in &vps {
-            // Each cell should be 1/3 × 1/3
             assert!((vp.rect[2] - 1.0 / 3.0).abs() < 1e-6);
             assert!((vp.rect[3] - 1.0 / 3.0).abs() < 1e-6);
         }
@@ -202,16 +233,16 @@ shader = "shaders/c.wgsl"
         assert_eq!(vps.len(), 3);
 
         let g0 = vps.iter().find(|v| v.name == "grid_0").unwrap();
-        assert!((g0.rect[0]).abs() < 1e-6); // col 0
-        assert!((g0.rect[1]).abs() < 1e-6); // row 0
+        assert!((g0.rect[0]).abs() < 1e-6);
+        assert!((g0.rect[1]).abs() < 1e-6);
 
         let g4 = vps.iter().find(|v| v.name == "grid_4").unwrap();
-        assert!((g4.rect[0] - 1.0 / 3.0).abs() < 1e-6); // col 1
-        assert!((g4.rect[1] - 1.0 / 3.0).abs() < 1e-6); // row 1
+        assert!((g4.rect[0] - 1.0 / 3.0).abs() < 1e-6);
+        assert!((g4.rect[1] - 1.0 / 3.0).abs() < 1e-6);
 
         let g8 = vps.iter().find(|v| v.name == "grid_8").unwrap();
-        assert!((g8.rect[0] - 2.0 / 3.0).abs() < 1e-6); // col 2
-        assert!((g8.rect[1] - 2.0 / 3.0).abs() < 1e-6); // row 2
+        assert!((g8.rect[0] - 2.0 / 3.0).abs() < 1e-6);
+        assert!((g8.rect[1] - 2.0 / 3.0).abs() < 1e-6);
     }
 
     #[test]

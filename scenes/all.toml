@@ -2,6 +2,10 @@
 # Keep this up to date as new shaders are added.
 # Run with: cargo run -- scenes/all.toml 9
 
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
 [grid_0]
 shader = "shaders/hyperspace_tunnel.wgsl"
 

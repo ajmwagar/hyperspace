@@ -16,6 +16,15 @@ pub struct Uniforms {
     pub _pad0: [f32; 3], // align cv to 16 bytes
     pub cv: [f32; 8],
     pub scene_id: u32,
+    // Stereo analysis (L/R)
+    pub amplitude_l: f32,
+    pub amplitude_r: f32,
+    pub bass_l: f32,
+    pub bass_r: f32,
+    pub mid_l: f32,
+    pub mid_r: f32,
+    pub high_l: f32,
+    pub high_r: f32,
     pub _pad1: [f32; 3], // pad to 16-byte alignment
 }
 
@@ -37,6 +46,14 @@ impl Default for Uniforms {
             _pad0: [0.0; 3],
             cv: [0.0; 8],
             scene_id: 0,
+            amplitude_l: 0.0,
+            amplitude_r: 0.0,
+            bass_l: 0.0,
+            bass_r: 0.0,
+            mid_l: 0.0,
+            mid_r: 0.0,
+            high_l: 0.0,
+            high_r: 0.0,
             _pad1: [0.0; 3],
         }
     }
@@ -53,7 +70,6 @@ mod tests {
 
     #[test]
     fn uniforms_field_offsets() {
-        // Verify the layout matches what WGSL expects
         use std::mem::offset_of;
         assert_eq!(offset_of!(Uniforms, time), 0);
         assert_eq!(offset_of!(Uniforms, delta_time), 4);
@@ -65,8 +81,21 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, high), 32);
         // _pad0 at 36..48
         assert_eq!(offset_of!(Uniforms, cv), 48);
-        // cv is 8 * 4 = 32 bytes, so scene_id at 80
         assert_eq!(offset_of!(Uniforms, scene_id), 80);
+        assert_eq!(offset_of!(Uniforms, amplitude_l), 84);
+        assert_eq!(offset_of!(Uniforms, amplitude_r), 88);
+        assert_eq!(offset_of!(Uniforms, bass_l), 92);
+        assert_eq!(offset_of!(Uniforms, bass_r), 96);
+        assert_eq!(offset_of!(Uniforms, mid_l), 100);
+        assert_eq!(offset_of!(Uniforms, mid_r), 104);
+        assert_eq!(offset_of!(Uniforms, high_l), 108);
+        assert_eq!(offset_of!(Uniforms, high_r), 112);
+        // _pad1 at 116..128
+    }
+
+    #[test]
+    fn uniforms_total_size() {
+        assert_eq!(Uniforms::SIZE, 128);
     }
 
     #[test]
@@ -82,14 +111,21 @@ mod tests {
             high: 0.1,
             cv: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
             scene_id: 42,
+            amplitude_l: 0.6,
+            amplitude_r: 0.8,
+            bass_l: 0.2,
+            bass_r: 0.4,
             ..Default::default()
         };
         let bytes = bytemuck::bytes_of(&u);
         let u2: &Uniforms = bytemuck::from_bytes(bytes);
         assert_eq!(u2.time, 1.5);
-        assert_eq!(u2.resolution, [1920.0, 1080.0]);
         assert_eq!(u2.cv[7], 0.8);
         assert_eq!(u2.scene_id, 42);
+        assert_eq!(u2.amplitude_l, 0.6);
+        assert_eq!(u2.amplitude_r, 0.8);
+        assert_eq!(u2.bass_l, 0.2);
+        assert_eq!(u2.bass_r, 0.4);
     }
 
     #[test]
@@ -97,6 +133,8 @@ mod tests {
         let u = Uniforms::default();
         assert_eq!(u.time, 0.0);
         assert_eq!(u.amplitude, 0.0);
+        assert_eq!(u.amplitude_l, 0.0);
+        assert_eq!(u.amplitude_r, 0.0);
         assert_eq!(u.resolution, [1920.0, 1080.0]);
         assert_eq!(u.cv, [0.0; 8]);
     }

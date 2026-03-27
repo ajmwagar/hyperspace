@@ -1,3 +1,7 @@
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
 [center]
 shader = "shaders/plasma_vortex.wgsl"
 

@@ -13,6 +13,14 @@ struct Uniforms {
     high: f32,
     cv: array<vec4<f32>, 2>,
     scene_id: u32,
+    amplitude_l: f32,
+    amplitude_r: f32,
+    bass_l: f32,
+    bass_r: f32,
+    mid_l: f32,
+    mid_r: f32,
+    high_l: f32,
+    high_r: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;

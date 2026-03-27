@@ -39,8 +39,20 @@ impl App {
         let audio_shared = audio::new_shared();
         let cv_shared = cv::new_shared();
 
-        // Start audio capture
-        let audio_stream = match audio::start_capture(audio_shared.clone()) {
+        // Load scene config early to get audio settings
+        let audio_config = scene::SceneConfig::load(&scene_path)
+            .ok()
+            .map(|c| c.audio)
+            .unwrap_or_default();
+
+        // Parse channel override from scene config
+        let channels = audio_config
+            .channels
+            .as_deref()
+            .and_then(audio::ChannelPair::parse);
+
+        // Start audio capture with device selection from scene config
+        let audio_stream = match start_audio(&audio_shared, &audio_config, channels) {
             Ok(stream) => {
                 log::info!("audio capture started");
                 Some(stream)
@@ -65,6 +77,43 @@ impl App {
             _audio_stream: audio_stream,
         })
     }
+}
+
+fn start_audio(
+    shared: &audio::SharedAudioData,
+    config: &scene::AudioConfig,
+    channels: Option<audio::ChannelPair>,
+) -> Result<cpal::Stream> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let host = cpal::default_host();
+
+    let device = if let Some(ref name_filter) = config.device {
+        // Find device matching the name substring
+        let devices: Vec<_> = host.input_devices()?.collect();
+        let found = devices.into_iter().find(|d| {
+            d.name()
+                .map(|n| n.to_lowercase().contains(&name_filter.to_lowercase()))
+                .unwrap_or(false)
+        });
+        match found {
+            Some(d) => {
+                log::info!("matched audio device '{}' for filter '{}'",
+                    d.name().unwrap_or_default(), name_filter);
+                d
+            }
+            None => {
+                log::warn!("no device matching '{}', falling back to default", name_filter);
+                host.default_input_device()
+                    .ok_or_else(|| anyhow::anyhow!("no audio input device"))?
+            }
+        }
+    } else {
+        host.default_input_device()
+            .ok_or_else(|| anyhow::anyhow!("no audio input device"))?
+    };
+
+    audio::start_capture_device(shared.clone(), device, channels)
 }
 
 impl ApplicationHandler for App {
@@ -158,6 +207,14 @@ impl ApplicationHandler for App {
                     high: audio.high,
                     cv,
                     scene_id: 0,
+                    amplitude_l: audio.left.amplitude,
+                    amplitude_r: audio.right.amplitude,
+                    bass_l: audio.left.bass,
+                    bass_r: audio.right.bass,
+                    mid_l: audio.left.mid,
+                    mid_r: audio.right.mid,
+                    high_l: audio.left.high,
+                    high_r: audio.right.high,
                     ..Default::default()
                 };
 
