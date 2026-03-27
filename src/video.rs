@@ -53,21 +53,20 @@ impl VideoOverlay {
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(100);
 
-        // Calculate output dimensions (preserve aspect ratio)
-        let scale = (max_width as f32 / src_w as f32).min(1.0);
-        let out_w = ((src_w as f32 * scale) as u32) & !1; // even width
-        let out_h = ((src_h as f32 * scale) as u32) & !1; // even height
+        // Scale to fill max_width square directly in ffmpeg
+        let out_w = max_width;
+        let out_h = max_width;
 
         log::info!(
             "video overlay: {} ({}x{} @ {}fps, {} frames → {}x{})",
             path, src_w, src_h, fps, num_frames, out_w, out_h
         );
 
-        // Decode all frames as raw RGBA via ffmpeg
+        // Decode all frames as raw RGBA via ffmpeg, scaled to square
         let output = Command::new("ffmpeg")
             .args([
                 "-i", path,
-                "-vf", &format!("scale={}:{},format=rgba", out_w, out_h),
+                "-vf", &format!("scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},format=rgba", out_w, out_h, out_w, out_h),
                 "-f", "rawvideo",
                 "-pix_fmt", "rgba",
                 "-v", "quiet",
@@ -91,22 +90,8 @@ impl VideoOverlay {
             let end = start + frame_size;
             let frame_data = output.stdout[start..end].to_vec();
 
-            // Resize every frame to fill the square canvas (cover, not letterbox)
-            let img = image::RgbaImage::from_raw(out_w, out_h, frame_data).unwrap();
-            let resized = image::imageops::resize(
-                &img,
-                max_width,
-                max_width,
-                image::imageops::FilterType::Lanczos3,
-            );
-            frames.push(VideoFrame {
-                rgba: resized.into_raw(),
-            });
+            frames.push(VideoFrame { rgba: frame_data });
         }
-
-        // Override dimensions to be the square canvas
-        let out_w = max_width;
-        let out_h = max_width;
 
         Ok(Self {
             frames,
