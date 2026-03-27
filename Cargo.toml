@@ -18,6 +18,15 @@ log = "0.4"
 env_logger = "0.11"
 anyhow = "1"
 mlua = { version = "0.10", features = ["lua54", "vendored"] }
+image = { version = "0.25", optional = true }
+gif = { version = "0.13", optional = true }
+
+[features]
+capture = ["image", "gif"]
+
+[[example]]
+name = "capture"
+required-features = ["capture"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rppal = "0.22"

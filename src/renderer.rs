@@ -15,14 +15,16 @@ const FEEDBACK_SIZE: u32 = 512; // offscreen texture resolution for feedback pip
 struct FeedbackState {
     textures: [wgpu::Texture; 2],
     views: [wgpu::TextureView; 2],
-    /// Which texture to write to this frame (the other is read)
-    write_idx: usize,
+    /// Which texture holds the most recent complete result (read by next frame's main shader)
+    result_idx: usize,
 }
 
 /// A compiled shader pipeline for one viewport.
 pub struct ShaderPipeline {
     pub viewport: Viewport,
     pub render_pipeline: wgpu::RenderPipeline,
+    /// Post-processing shader chain (each reads prev pass output via prev_frame)
+    pub post_pipelines: Vec<wgpu::RenderPipeline>,
     pub state_buffer: wgpu::Buffer,
     /// Two bind groups for ping-pong: [0] reads texture 0, [1] reads texture 1
     pub bind_groups: [wgpu::BindGroup; 2],
@@ -341,8 +343,8 @@ impl Renderer {
     pub fn load_shader(&mut self, viewport: Viewport) -> Result<()> {
         let shader_src = std::fs::read_to_string(Path::new(&viewport.shader_path))?;
 
-        // Detect if shader uses feedback (has prev_frame binding)
-        let uses_feedback = shader_src.contains("prev_frame");
+        // Feedback is needed if the main shader uses prev_frame OR has post-processing
+        let uses_feedback = shader_src.contains("prev_frame") || !viewport.post.is_empty();
 
         let shader_module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(&viewport.name),
@@ -391,6 +393,52 @@ impl Renderer {
             cache: None,
         });
 
+        // Compile post-processing shaders
+        let mut post_pipelines = Vec::new();
+        for (i, post_path) in viewport.post.iter().enumerate() {
+            let post_src = std::fs::read_to_string(Path::new(post_path))?;
+            let post_module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(&format!("{}_{}", viewport.name, i)),
+                source: wgpu::ShaderSource::Wgsl(post_src.into()),
+            });
+            let post_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(&format!("{}_post_{}_layout", viewport.name, i)),
+                bind_group_layouts: &[&self.bind_group_layout],
+                push_constant_ranges: &[],
+            });
+            let post_pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(&format!("{}_post_{}", viewport.name, i)),
+                layout: Some(&post_layout),
+                vertex: wgpu::VertexState {
+                    module: &post_module,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &post_module,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: target_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+            log::info!("  post[{}]: {}", i, post_path);
+            post_pipelines.push(post_pipeline);
+        }
+
         // Per-pipeline state buffer
         let state_data = vec![0.0f32; scripting::STATE_BUFFER_SIZE];
         let state_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -407,7 +455,7 @@ impl Renderer {
             Some(FeedbackState {
                 textures: [tex_a, tex_b],
                 views: [view_a, view_b],
-                write_idx: 0,
+                result_idx: 0,
             })
         } else {
             None
@@ -438,6 +486,7 @@ impl Renderer {
         self.pipelines.push(ShaderPipeline {
             viewport,
             render_pipeline,
+            post_pipelines,
             state_buffer,
             bind_groups,
             feedback,
@@ -486,21 +535,20 @@ impl Renderer {
         let fb_w = self.surface_config.width as f32;
         let fb_h = self.surface_config.height as f32;
 
-        // First: submit feedback pipeline offscreen renders (need separate submissions
-        // so the offscreen texture is ready before the blit reads it)
+        // First: submit feedback pipeline offscreen renders (main + post chain)
+        // Each pass needs a separate submission so the texture is ready for the next pass.
         for pipeline in &mut self.pipelines {
             if let Some(ref mut fb) = pipeline.feedback {
-                let write_idx = fb.write_idx;
-                let read_idx = 1 - write_idx;
-                let read_bind_group = &pipeline.bind_groups[read_idx];
-
-                let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("feedback_render"),
-                });
+                // Main shader: reads texture[result_idx], writes to texture[1-result_idx]
+                let read_idx = fb.result_idx;
+                let write_idx = 1 - read_idx;
 
                 {
+                    let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("feedback_main"),
+                    });
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("feedback_pass"),
+                        label: Some("feedback_main_pass"),
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                             view: &fb.views[write_idx],
                             resolve_target: None,
@@ -513,13 +561,60 @@ impl Renderer {
                         timestamp_writes: None,
                         occlusion_query_set: None,
                     });
-
                     pass.set_pipeline(&pipeline.render_pipeline);
-                    pass.set_bind_group(0, read_bind_group, &[]);
+                    pass.set_bind_group(0, &pipeline.bind_groups[read_idx], &[]);
                     pass.draw(0..3, 0..1);
+                    drop(pass);
+                    self.queue.submit(std::iter::once(encoder.finish()));
                 }
 
-                self.queue.submit(std::iter::once(encoder.finish()));
+                // Post-processing chain: ping-pong between textures
+                let mut current_result = write_idx;
+                for post_pipeline in &pipeline.post_pipelines {
+                    let post_read = current_result;
+                    let post_write = 1 - post_read;
+
+                    // Create a bind group reading the current result (inline to avoid borrow issue)
+                    let post_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: None,
+                        layout: &self.bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
+                            wgpu::BindGroupEntry { binding: 1, resource: self.spectrum_buffer.as_entire_binding() },
+                            wgpu::BindGroupEntry { binding: 2, resource: pipeline.state_buffer.as_entire_binding() },
+                            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&fb.views[post_read]) },
+                        ],
+                    });
+
+                    let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("post_pass"),
+                    });
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("post_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &fb.views[post_write],
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+                    pass.set_pipeline(post_pipeline);
+                    pass.set_bind_group(0, &post_bg, &[]);
+                    pass.draw(0..3, 0..1);
+                    drop(pass);
+                    self.queue.submit(std::iter::once(encoder.finish()));
+
+                    current_result = post_write;
+                }
+
+                // Update result index so next frame reads the final output
+                fb.result_idx = current_result;
             }
         }
 
@@ -554,15 +649,15 @@ impl Renderer {
             let w = (vp.rect[2] * fb_w) as u32;
             let h = (vp.rect[3] * fb_h) as u32;
 
-            if let Some(ref mut fb) = pipeline.feedback {
-                // Blit offscreen feedback result to surface viewport
+            if let Some(ref fb) = pipeline.feedback {
+                // Blit the final chain result to surface viewport
                 let blit_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("blit_bg"),
                     layout: &self.blit_bind_group_layout,
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&fb.views[fb.write_idx]),
+                            resource: wgpu::BindingResource::TextureView(&fb.views[fb.result_idx]),
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
@@ -594,8 +689,6 @@ impl Renderer {
                     pass.draw(0..3, 0..1);
                 }
 
-                // Swap ping-pong
-                fb.write_idx = 1 - fb.write_idx;
             } else {
                 // Direct render to surface viewport
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

@@ -1,0 +1,14 @@
+# Composed — demonstrates post-processing chains.
+# Same shaders, different feel through flow fields and colormaps.
+
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
+[center]
+shader = "shaders/oscilloscope.wgsl"
+post = ["shaders/post/flow_spiral.wgsl", "shaders/post/colormap_neon.wgsl"]
+
+[sides]
+shader = "shaders/classic_viz.wgsl"
+post = ["shaders/post/flow_drift.wgsl", "shaders/post/colormap_fire.wgsl"]

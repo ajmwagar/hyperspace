@@ -102,3 +102,61 @@ impl ShaderScript {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_nonexistent_returns_none() {
+        let result = ShaderScript::load_for_shader("shaders/nonexistent.wgsl").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn load_cellular_lua() {
+        let script = ShaderScript::load_for_shader("shaders/cellular.wgsl").unwrap();
+        assert!(script.is_some());
+        let script = script.unwrap();
+        // GoL should have seeded some cells
+        let alive_count: usize = script.state.iter().filter(|&&v| v > 0.5).count();
+        assert!(alive_count > 0, "GoL should have some alive cells after init");
+    }
+
+    #[test]
+    fn load_gforce_lua() {
+        let script = ShaderScript::load_for_shader("shaders/gforce.wgsl").unwrap();
+        assert!(script.is_some());
+        let script = script.unwrap();
+        // State[3] = decay, should be nonzero from preset
+        assert!(script.state[3] > 0.0, "decay should be set by preset");
+    }
+
+    #[test]
+    fn update_passes_uniforms() {
+        let mut script = ShaderScript::load_for_shader("shaders/gforce.wgsl")
+            .unwrap()
+            .unwrap();
+        let u = ScriptUniforms {
+            time: 1.0,
+            delta_time: 0.016,
+            amplitude: 0.5,
+            beat: 0.0,
+            bass: 0.3,
+            mid: 0.2,
+            high: 0.1,
+            amplitude_l: 0.4,
+            amplitude_r: 0.6,
+        };
+        // Should not panic
+        script.update(&u).unwrap();
+        // State should still have valid preset values
+        assert!(script.state[3] > 0.0);
+    }
+
+    #[test]
+    fn state_buffer_size() {
+        assert_eq!(STATE_BUFFER_SIZE, 16384);
+        assert_eq!(STATE_BUFFER_SIZE, 128 * 128);
+    }
+}

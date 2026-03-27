@@ -24,6 +24,9 @@ pub struct OutputConfig {
     pub shader: String,
     #[serde(default)]
     pub symmetric: bool,
+    /// Post-processing shader chain (applied in order after main shader)
+    #[serde(default)]
+    pub post: Vec<String>,
 }
 
 /// Display layout mode.
@@ -63,6 +66,8 @@ pub struct Viewport {
     pub name: String,
     pub shader_path: String,
     pub symmetric: bool,
+    /// Post-processing shader paths (applied in order)
+    pub post: Vec<String>,
     /// Normalized rect within the framebuffer: (x, y, w, h) in 0..1
     pub rect: [f32; 4],
 }
@@ -94,6 +99,7 @@ impl SceneConfig {
                 name: "center".into(),
                 shader_path: center.shader.clone(),
                 symmetric: center.symmetric,
+                post: center.post.clone(),
                 rect: [0.0, 0.0, 0.5, 1.0],
             });
         }
@@ -103,6 +109,7 @@ impl SceneConfig {
                 name: "sides".into(),
                 shader_path: sides.shader.clone(),
                 symmetric: sides.symmetric,
+                post: sides.post.clone(),
                 rect: [0.5, 0.0, 0.5, 1.0],
             });
         }
@@ -127,6 +134,7 @@ impl SceneConfig {
                     name: name.clone(),
                     shader_path: output.shader.clone(),
                     symmetric: output.symmetric,
+                    post: output.post.clone(),
                     rect: [
                         col as f32 * cell_w,
                         row as f32 * cell_h,
@@ -146,6 +154,7 @@ impl SceneConfig {
                     name: name.clone(),
                     shader_path: output.shader.clone(),
                     symmetric: output.symmetric,
+                    post: output.post.clone(),
                     rect: [
                         col as f32 * cell_w,
                         row as f32 * cell_h,
@@ -282,5 +291,81 @@ shader = "shaders/test.wgsl"
         let config = SceneConfig::load(Path::new("scenes/default.toml")).unwrap();
         assert!(config.outputs.contains_key("center"));
         assert!(config.outputs.contains_key("sides"));
+    }
+
+    #[test]
+    fn parse_post_processing_chain() {
+        let toml = r#"
+[center]
+shader = "shaders/oscilloscope.wgsl"
+post = ["shaders/post/flow_spiral.wgsl", "shaders/post/colormap_neon.wgsl"]
+"#;
+        let config = SceneConfig::from_str(toml).unwrap();
+        let center = &config.outputs["center"];
+        assert_eq!(center.post.len(), 2);
+        assert_eq!(center.post[0], "shaders/post/flow_spiral.wgsl");
+        assert_eq!(center.post[1], "shaders/post/colormap_neon.wgsl");
+    }
+
+    #[test]
+    fn post_defaults_empty() {
+        let config = SceneConfig::from_str(DEFAULT_SCENE).unwrap();
+        assert!(config.outputs["center"].post.is_empty());
+    }
+
+    #[test]
+    fn post_carried_to_viewports() {
+        let toml = r#"
+[center]
+shader = "shaders/test.wgsl"
+post = ["shaders/post/flow_spiral.wgsl"]
+"#;
+        let config = SceneConfig::from_str(toml).unwrap();
+        let vps = config.resolve_viewports(LayoutMode::ThreeOutput);
+        assert_eq!(vps[0].post.len(), 1);
+    }
+
+    #[test]
+    fn layout_mode_parse_grid() {
+        match LayoutMode::parse("4x3") {
+            Some(LayoutMode::Grid { cols: 4, rows: 3 }) => {}
+            other => panic!("expected Grid 4x3, got {:?}", other),
+        }
+        match LayoutMode::parse("3x3") {
+            Some(LayoutMode::Grid { cols: 3, rows: 3 }) => {}
+            other => panic!("expected Grid 3x3, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn layout_mode_parse_legacy() {
+        match LayoutMode::parse("9") {
+            Some(LayoutMode::Grid { cols: 3, rows: 3 }) => {}
+            other => panic!("expected Grid 3x3 from '9', got {:?}", other),
+        }
+        match LayoutMode::parse("12") {
+            Some(LayoutMode::Grid { cols: 4, rows: 3 }) => {}
+            other => panic!("expected Grid 4x3 from '12', got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn layout_mode_parse_invalid() {
+        assert!(LayoutMode::parse("abc").is_none());
+    }
+
+    #[test]
+    fn grid_4x3_produces_12_cells() {
+        let toml = (0..12)
+            .map(|i| format!("[grid_{}]\nshader = \"shaders/test.wgsl\"\n", i))
+            .collect::<String>();
+        let config = SceneConfig::from_str(&toml).unwrap();
+        let vps = config.resolve_viewports(LayoutMode::Grid { cols: 4, rows: 3 });
+        assert_eq!(vps.len(), 12);
+        // Check cell sizes
+        for vp in &vps {
+            assert!((vp.rect[2] - 0.25).abs() < 1e-6); // 1/4 width
+            assert!((vp.rect[3] - 1.0/3.0).abs() < 1e-6); // 1/3 height
+        }
     }
 }

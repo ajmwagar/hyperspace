@@ -176,11 +176,53 @@ impl ApplicationHandler for App {
                 state.renderer.resize(size.width, size.height);
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if event.physical_key
-                    == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Escape)
-                    && event.state == winit::event::ElementState::Pressed
-                {
+                use winit::keyboard::{KeyCode, PhysicalKey};
+                if event.state != winit::event::ElementState::Pressed {
+                    // Only handle key down
+                } else if event.physical_key == PhysicalKey::Code(KeyCode::Escape) {
                     event_loop.exit();
+                } else {
+                    // Scene switching: number keys 1-9, 0 load scene files
+                    let scene_idx = match event.physical_key {
+                        PhysicalKey::Code(KeyCode::Digit1) => Some(0),
+                        PhysicalKey::Code(KeyCode::Digit2) => Some(1),
+                        PhysicalKey::Code(KeyCode::Digit3) => Some(2),
+                        PhysicalKey::Code(KeyCode::Digit4) => Some(3),
+                        PhysicalKey::Code(KeyCode::Digit5) => Some(4),
+                        PhysicalKey::Code(KeyCode::Digit6) => Some(5),
+                        PhysicalKey::Code(KeyCode::Digit7) => Some(6),
+                        PhysicalKey::Code(KeyCode::Digit8) => Some(7),
+                        PhysicalKey::Code(KeyCode::Digit9) => Some(8),
+                        PhysicalKey::Code(KeyCode::Digit0) => Some(9),
+                        _ => None,
+                    };
+                    if let Some(idx) = scene_idx {
+                        // Find scene files and load by index
+                        if let Ok(mut entries) = std::fs::read_dir("scenes") {
+                            let mut scenes: Vec<_> = entries
+                                .filter_map(|e| e.ok())
+                                .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
+                                .collect();
+                            scenes.sort_by_key(|e| e.file_name());
+                            if let Some(entry) = scenes.get(idx) {
+                                let path = entry.path();
+                                log::info!("switching to scene: {}", path.display());
+                                match scene::SceneConfig::load(&path) {
+                                    Ok(config) => {
+                                        state.renderer.pipelines.clear();
+                                        let viewports = config.resolve_viewports(self.layout_mode);
+                                        for vp in viewports {
+                                            log::info!("  loading viewport '{}': {}", vp.name, vp.shader_path);
+                                            if let Err(e) = state.renderer.load_shader(vp) {
+                                                log::error!("  failed: {}", e);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => log::error!("failed to load scene: {}", e),
+                                }
+                            }
+                        }
+                    }
                 }
             }
             WindowEvent::RedrawRequested => {
