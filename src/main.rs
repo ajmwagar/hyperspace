@@ -97,6 +97,8 @@ impl ApplicationHandler for App {
             }
         }
 
+        window.request_redraw();
+
         self.state = Some(AppState {
             window,
             renderer,
