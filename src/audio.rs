@@ -7,8 +7,8 @@ pub const FFT_SIZE: usize = 1024;
 const BEAT_THRESHOLD: f32 = 1.4;
 const BEAT_DECAY: f32 = 0.95;
 const NOISE_FLOOR: f32 = 1e-5; // gate out hiss below this RMS
-const ATTACK: f32 = 0.6;       // EMA rise speed (0-1, higher = snappier)
-const RELEASE: f32 = 0.12;     // EMA fall speed (0-1, higher = faster decay)
+const ATTACK: f32 = 0.35;      // EMA rise speed (0-1, higher = snappier)
+const RELEASE: f32 = 0.18;     // EMA fall speed (0-1, higher = faster decay)
 const AGC_ATTACK: f32 = 0.02;  // auto-gain rises slowly
 const AGC_RELEASE: f32 = 0.001; // auto-gain falls very slowly (holds peaks)
 

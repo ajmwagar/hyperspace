@@ -31,4 +31,4 @@ shader = "shaders/classic_viz.wgsl"
 shader = "shaders/cyberpunk.wgsl"
 
 [grid_8]
-shader = "shaders/hyperdrive.wgsl"
+shader = "shaders/lava_lamp.wgsl"
