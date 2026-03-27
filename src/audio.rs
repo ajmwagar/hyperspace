@@ -65,6 +65,9 @@ pub struct AudioData {
     // Per-channel stereo — smoothed, auto-gained
     pub left: ChannelAnalysis,
     pub right: ChannelAnalysis,
+    // Raw waveform samples (most recent 512 per channel) for oscilloscope
+    pub waveform_l: Vec<f32>,
+    pub waveform_r: Vec<f32>,
     // Internal state
     energy_avg: f32,
     peak_amplitude: f32, // running peak for auto-gain
@@ -85,6 +88,8 @@ impl Default for AudioData {
             spectrum: vec![0.0; half],
             left: ChannelAnalysis { spectrum: vec![0.0; half], ..Default::default() },
             right: ChannelAnalysis { spectrum: vec![0.0; half], ..Default::default() },
+            waveform_l: vec![0.0; 512],
+            waveform_r: vec![0.0; 512],
             energy_avg: 0.0,
             peak_amplitude: 0.01,
             peak_bass: 0.01,
@@ -193,6 +198,11 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
                     out
                 };
 
+                // Extract raw waveform (last 512 samples per channel)
+                let wave_start = samples.len().saturating_sub(512);
+                let raw_wave_l: Vec<f32> = samples[wave_start..].iter().map(|&(l, _)| l).collect();
+                let raw_wave_r: Vec<f32> = samples[wave_start..].iter().map(|&(_, r)| r).collect();
+
                 // Deinterleave and apply Hann window
                 for (i, &(l, r)) in samples.iter().enumerate().take(FFT_SIZE) {
                     let w = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / FFT_SIZE as f32).cos());
@@ -274,6 +284,13 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
                     data.spectrum[i] = smooth(data.spectrum[i], norm);
                 }
                 data.left.spectrum.copy_from_slice(&raw_l.spectrum);
+                // Store raw waveform for oscilloscope
+                let wl = &mut data.waveform_l;
+                wl.resize(raw_wave_l.len(), 0.0);
+                wl.copy_from_slice(&raw_wave_l);
+                let wr = &mut data.waveform_r;
+                wr.resize(raw_wave_r.len(), 0.0);
+                wr.copy_from_slice(&raw_wave_r);
                 data.right.spectrum.copy_from_slice(&raw_r.spectrum);
 
                 // Beat detection on normalized signal

@@ -5,7 +5,10 @@ use wgpu::util::DeviceExt;
 use crate::scene::Viewport;
 use crate::uniforms::Uniforms;
 
-const FFT_SIZE: usize = 512; // half of 1024-point FFT
+const SPECTRUM_SIZE: usize = 512; // half of 1024-point FFT
+const WAVEFORM_SIZE: usize = 512; // raw samples per channel
+// Buffer layout: [0..512) spectrum, [512..1024) waveform L, [1024..1536) waveform R
+const AUDIO_BUFFER_SIZE: usize = SPECTRUM_SIZE + WAVEFORM_SIZE * 2;
 
 /// A compiled shader pipeline for one viewport.
 pub struct ShaderPipeline {
@@ -88,7 +91,7 @@ impl Renderer {
         });
 
         // Create FFT spectrum storage buffer
-        let spectrum_data = vec![0.0f32; FFT_SIZE];
+        let spectrum_data = vec![0.0f32; AUDIO_BUFFER_SIZE];
         let spectrum_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("spectrum"),
             contents: bytemuck::cast_slice(&spectrum_data),
@@ -218,11 +221,21 @@ impl Renderer {
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
     }
 
-    /// Update FFT spectrum storage buffer.
-    pub fn update_spectrum(&self, spectrum: &[f32]) {
-        let len = spectrum.len().min(FFT_SIZE);
+    /// Update audio storage buffer: spectrum + stereo waveform.
+    pub fn update_audio_buffer(&self, spectrum: &[f32], waveform_l: &[f32], waveform_r: &[f32]) {
+        let mut buf = vec![0.0f32; AUDIO_BUFFER_SIZE];
+        // [0..512): spectrum
+        let spec_len = spectrum.len().min(SPECTRUM_SIZE);
+        buf[..spec_len].copy_from_slice(&spectrum[..spec_len]);
+        // [512..1024): waveform L
+        let wl_len = waveform_l.len().min(WAVEFORM_SIZE);
+        buf[SPECTRUM_SIZE..SPECTRUM_SIZE + wl_len].copy_from_slice(&waveform_l[..wl_len]);
+        // [1024..1536): waveform R
+        let wr_len = waveform_r.len().min(WAVEFORM_SIZE);
+        buf[SPECTRUM_SIZE + WAVEFORM_SIZE..SPECTRUM_SIZE + WAVEFORM_SIZE + wr_len]
+            .copy_from_slice(&waveform_r[..wr_len]);
         self.queue
-            .write_buffer(&self.spectrum_buffer, 0, bytemuck::cast_slice(&spectrum[..len]));
+            .write_buffer(&self.spectrum_buffer, 0, bytemuck::cast_slice(&buf));
     }
 
     /// Render all pipelines to the surface.

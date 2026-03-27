@@ -219,7 +219,11 @@ impl ApplicationHandler for App {
                 };
 
                 state.renderer.update_uniforms(&uniforms);
-                state.renderer.update_spectrum(&audio.spectrum);
+                state.renderer.update_audio_buffer(
+                    &audio.spectrum,
+                    &audio.waveform_l,
+                    &audio.waveform_r,
+                );
 
                 drop(audio); // release lock before render
 
