@@ -63,8 +63,7 @@ function update(u)
 
     -- Fallback auto-advance (only if nothing has triggered for a while)
     if auto_timer > auto_interval and crossfade < 0.01 then
-        next_clip = (current + 1) % num_clips
-        crossfade = 0.001
+        advance_requested = true
         auto_timer = 0
     end
 
