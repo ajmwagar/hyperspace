@@ -486,20 +486,12 @@ impl Renderer {
         let fb_w = self.surface_config.width as f32;
         let fb_h = self.surface_config.height as f32;
 
+        // First: submit feedback pipeline offscreen renders (need separate submissions
+        // so the offscreen texture is ready before the blit reads it)
         for pipeline in &mut self.pipelines {
-            let vp = &pipeline.viewport;
-            let x = (vp.rect[0] * fb_w) as u32;
-            let y = (vp.rect[1] * fb_h) as u32;
-            let w = (vp.rect[2] * fb_w) as u32;
-            let h = (vp.rect[3] * fb_h) as u32;
-
             if let Some(ref mut fb) = pipeline.feedback {
-                // === Feedback pipeline: render to offscreen, then blit to surface ===
                 let write_idx = fb.write_idx;
                 let read_idx = 1 - write_idx;
-
-                // Pass 1: render shader to offscreen texture[write_idx],
-                // binding texture[read_idx] as prev_frame
                 let read_bind_group = &pipeline.bind_groups[read_idx];
 
                 let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -527,14 +519,50 @@ impl Renderer {
                     pass.draw(0..3, 0..1);
                 }
 
-                // Pass 2: blit offscreen texture to surface viewport
+                self.queue.submit(std::iter::once(encoder.finish()));
+            }
+        }
+
+        // Second: one encoder for all surface rendering (clear + all viewports + blits)
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("surface_render"),
+        });
+
+        // Clear the surface to black
+        {
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("clear"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        }
+
+        // Render each pipeline to its viewport
+        for pipeline in &mut self.pipelines {
+            let vp = &pipeline.viewport;
+            let x = (vp.rect[0] * fb_w) as u32;
+            let y = (vp.rect[1] * fb_h) as u32;
+            let w = (vp.rect[2] * fb_w) as u32;
+            let h = (vp.rect[3] * fb_h) as u32;
+
+            if let Some(ref mut fb) = pipeline.feedback {
+                // Blit offscreen feedback result to surface viewport
                 let blit_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("blit_bg"),
                     layout: &self.blit_bind_group_layout,
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&fb.views[write_idx]),
+                            resource: wgpu::BindingResource::TextureView(&fb.views[fb.write_idx]),
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
@@ -566,43 +594,34 @@ impl Renderer {
                     pass.draw(0..3, 0..1);
                 }
 
-                self.queue.submit(std::iter::once(encoder.finish()));
-
                 // Swap ping-pong
-                fb.write_idx = read_idx;
+                fb.write_idx = 1 - fb.write_idx;
             } else {
-                // === Normal pipeline: render directly to surface ===
-                let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("direct_render"),
+                // Direct render to surface viewport
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some(&vp.name),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &surface_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                 });
 
-                {
-                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some(&vp.name),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &surface_view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-
-                    pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
-                    pass.set_scissor_rect(x, y, w, h);
-                    pass.set_pipeline(&pipeline.render_pipeline);
-                    pass.set_bind_group(0, &pipeline.bind_groups[0], &[]);
-                    pass.draw(0..3, 0..1);
-                }
-
-                self.queue.submit(std::iter::once(encoder.finish()));
+                pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
+                pass.set_scissor_rect(x, y, w, h);
+                pass.set_pipeline(&pipeline.render_pipeline);
+                pass.set_bind_group(0, &pipeline.bind_groups[0], &[]);
+                pass.draw(0..3, 0..1);
             }
         }
 
+        self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
         Ok(())
     }
