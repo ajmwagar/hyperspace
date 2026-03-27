@@ -18,13 +18,13 @@ shader = "shaders/neon_grid.wgsl"
 shader = "shaders/fractal_pulse.wgsl"
 
 [grid_5]
-shader = "shaders/hyperspace_tunnel.wgsl"
+shader = "shaders/hyperdrive.wgsl"
 
 [grid_6]
-shader = "shaders/neon_grid.wgsl"
+shader = "shaders/classic_viz.wgsl"
 
 [grid_7]
-shader = "shaders/plasma_vortex.wgsl"
+shader = "shaders/cyberpunk.wgsl"
 
 [grid_8]
-shader = "shaders/fractal_pulse.wgsl"
+shader = "shaders/hyperdrive.wgsl"
