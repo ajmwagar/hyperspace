@@ -1,0 +1,6 @@
+[center]
+shader = "shaders/neon_grid.wgsl"
+
+[sides]
+shader = "shaders/plasma_vortex.wgsl"
+symmetric = true

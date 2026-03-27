@@ -1,0 +1,6 @@
+[center]
+shader = "shaders/plasma_vortex.wgsl"
+
+[sides]
+shader = "shaders/fractal_pulse.wgsl"
+symmetric = true
