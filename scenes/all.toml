@@ -1,0 +1,30 @@
+# All shaders — 3x3 grid, one per cell.
+# Keep this up to date as new shaders are added.
+# Run with: cargo run -- scenes/all.toml 9
+
+[grid_0]
+shader = "shaders/hyperspace_tunnel.wgsl"
+
+[grid_1]
+shader = "shaders/engine_gauges.wgsl"
+
+[grid_2]
+shader = "shaders/plasma_vortex.wgsl"
+
+[grid_3]
+shader = "shaders/neon_grid.wgsl"
+
+[grid_4]
+shader = "shaders/fractal_pulse.wgsl"
+
+[grid_5]
+shader = "shaders/hyperspace_tunnel.wgsl"
+
+[grid_6]
+shader = "shaders/neon_grid.wgsl"
+
+[grid_7]
+shader = "shaders/plasma_vortex.wgsl"
+
+[grid_8]
+shader = "shaders/fractal_pulse.wgsl"
