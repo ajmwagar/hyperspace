@@ -45,9 +45,15 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
     return out;
 }
 
+const GRID: i32 = 80;
+
+// Wrap coordinate into 0..GRID (torus)
+fn wrap(v: i32) -> i32 {
+    return ((v % GRID) + GRID) % GRID;
+}
+
 // === Glider ===
 // Period 4, moves (+1,+1) each full cycle
-// Phase 0: (1,0)(2,1)(0,2)(1,2)(2,2)
 fn glider_phase0(p: vec2<i32>) -> bool {
     return (p.x==1 && p.y==0) || (p.x==2 && p.y==1) ||
            (p.x==0 && p.y==2) || (p.x==1 && p.y==2) || (p.x==2 && p.y==2);
@@ -68,10 +74,12 @@ fn glider_phase3(p: vec2<i32>) -> bool {
 fn glider_at(cell: vec2<i32>, origin: vec2<i32>, gen: i32) -> bool {
     let cycle = gen / 4;
     let phase = gen % 4;
-    // Glider moves +1,+1 per full cycle
     let offset = vec2<i32>(cycle, cycle);
-    let local = cell - origin - offset;
-    if local.x < 0 || local.y < 0 || local.x > 3 || local.y > 3 { return false; }
+    // Wrap: pattern wraps around the grid
+    let lx = wrap(cell.x - origin.x - offset.x);
+    let ly = wrap(cell.y - origin.y - offset.y);
+    let local = vec2<i32>(lx, ly);
+    if local.x > 3 || local.y > 3 { return false; }
     if phase == 0 { return glider_phase0(local); }
     if phase == 1 { return glider_phase1(local); }
     if phase == 2 { return glider_phase2(local); }
@@ -80,27 +88,29 @@ fn glider_at(cell: vec2<i32>, origin: vec2<i32>, gen: i32) -> bool {
 
 // === Blinker (period 2 oscillator) ===
 fn blinker_at(cell: vec2<i32>, origin: vec2<i32>, gen: i32) -> bool {
-    let local = cell - origin;
+    let lx = wrap(cell.x - origin.x);
+    let ly = wrap(cell.y - origin.y);
     let phase = gen % 2;
     if phase == 0 {
-        // Horizontal: (0,1)(1,1)(2,1)
-        return local.y == 1 && local.x >= 0 && local.x <= 2;
+        return ly == 1 && lx >= 0 && lx <= 2;
     } else {
-        // Vertical: (1,0)(1,1)(1,2)
-        return local.x == 1 && local.y >= 0 && local.y <= 2;
+        return lx == 1 && ly >= 0 && ly <= 2;
     }
 }
 
 // === Block (still life) ===
 fn block_at(cell: vec2<i32>, origin: vec2<i32>) -> bool {
-    let local = cell - origin;
-    return local.x >= 0 && local.x <= 1 && local.y >= 0 && local.y <= 1;
+    let lx = wrap(cell.x - origin.x);
+    let ly = wrap(cell.y - origin.y);
+    return lx >= 0 && lx <= 1 && ly >= 0 && ly <= 1;
 }
 
 // === Pulsar (period 3 oscillator, 13x13) ===
 fn pulsar_at(cell: vec2<i32>, origin: vec2<i32>, gen: i32) -> bool {
-    let local = cell - origin;
-    if local.x < 0 || local.y < 0 || local.x > 12 || local.y > 12 { return false; }
+    let lx = wrap(cell.x - origin.x);
+    let ly = wrap(cell.y - origin.y);
+    if lx > 12 || ly > 12 { return false; }
+    let local = vec2<i32>(lx, ly);
     let phase = gen % 3;
     let x = local.x;
     let y = local.y;
@@ -165,8 +175,10 @@ fn lwss_at(cell: vec2<i32>, origin: vec2<i32>, gen: i32) -> bool {
     let cycle = gen / 4;
     let phase = gen % 4;
     let offset = vec2<i32>(cycle * 2, 0);
-    let local = cell - origin - offset;
-    if local.x < 0 || local.y < 0 || local.x > 5 || local.y > 4 { return false; }
+    let lx = wrap(cell.x - origin.x - offset.x);
+    let ly = wrap(cell.y - origin.y - offset.y);
+    let local = vec2<i32>(lx, ly);
+    if local.x > 5 || local.y > 4 { return false; }
     let x = local.x;
     let y = local.y;
     if phase == 0 {
@@ -206,15 +218,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     alive = alive || glider_at(cell, vec2<i32>(35, 30), gen);
     alive = alive || glider_at(cell, vec2<i32>(60, 50), gen);
 
-    // Beat-spawned gliders: new ones appear on beat
-    let beat_gen = i32(floor(u.time * 4.0));
-    let beat_cycle = i32(floor(u.time * 0.5)); // new glider every ~2 sec
-    for (var b = 0; b < 8; b++) {
-        let spawn_y = (b * 10 + 3) % 75;
-        let spawn_gen = beat_cycle - b;
-        let age = gen - spawn_gen * 8;
+    // Continuously spawning gliders: new wave every ~3 seconds from different edges
+    let spawn_interval = 3.0;
+    let total_spawns = i32(floor(u.time / spawn_interval));
+    // Only check the most recent 20 spawns (older ones are still alive via wrapping)
+    let check_start = max(total_spawns - 20, 0);
+    for (var s = check_start; s <= total_spawns; s++) {
+        let spawn_time = f32(s) * spawn_interval;
+        let age = i32(floor((u.time - spawn_time) * 4.0));
         if age >= 0 {
-            alive = alive || glider_at(cell, vec2<i32>(2, spawn_y), age);
+            // Each spawn gets a unique position on the edge
+            let edge = s % 4; // 0=left, 1=top, 2=right, 3=bottom
+            let pos_along = ((s * 17 + 7) % 70) + 3; // spread along edge
+            var origin = vec2<i32>(0, 0);
+            if edge == 0 { origin = vec2<i32>(0, pos_along); }
+            else if edge == 1 { origin = vec2<i32>(pos_along, 0); }
+            else if edge == 2 { origin = vec2<i32>(77, pos_along); }
+            else { origin = vec2<i32>(pos_along, 77); }
+            alive = alive || glider_at(cell, origin, age);
         }
     }
 
