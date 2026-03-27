@@ -59,7 +59,7 @@ fn blob_pos(id: f32, t: f32) -> vec2<f32> {
     let x = sin(t * freq_x + phase) * amp_x;
     // Blobs drift upward with time, wrapping around
     let rise_speed = 0.08 + hash(id + 4.0) * 0.12;
-    let y_base = fract(t * rise_speed + hash(id + 5.0)) * 2.4 - 0.7;
+    let y_base = fract(t * rise_speed + hash(id + 5.0)) * 1.2 - 0.6;
     let y = y_base + sin(t * freq_y + phase * 2.0) * 0.1;
 
     return vec2<f32>(x, y);

@@ -47,6 +47,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let aspect = u.resolution.x / u.resolution.y;
     var p = vec2<f32>(uv.x * aspect, uv.y);
 
+    // Stereo panning: offset tunnel center based on L/R difference
+    let pan = (u.amplitude_l - u.amplitude_r) * 0.6;
+    let bass_pan = (u.bass_l - u.bass_r) * 0.8;
+    let mid_pan = (u.mid_l - u.mid_r) * 0.4;
+    // Smooth bend: offset increases with distance from center
+    let bend = (pan + bass_pan) * (1.0 + length(p) * 0.5);
+    p.x -= bend;
+    p.y -= mid_pan * 0.3;
+
     // Polar coordinates
     let angle = atan2(p.y, p.x);
     let radius = length(p);
@@ -57,16 +66,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Scroll through tunnel based on time + bass
     let speed = u.time * 2.0 + u.bass * 5.0;
-    let tx = tunnel_x + sin(u.time * 0.3) * u.mid;
+    let tx = tunnel_x + sin(u.time * 0.3) * u.mid + pan * 0.5;
     let ty = tunnel_z + speed;
 
     // Grid pattern with audio reactivity
     let grid = sin(tx * 10.0) * sin(ty * 10.0);
     let lines = smoothstep(0.0, 0.1 + u.amplitude * 0.5, abs(grid));
 
-    // Color palette - shifts with beat
+    // Color palette - shifts with beat, stereo tints L/R
     let beat_hue = u.beat * 0.3;
-    let hue = fract(tunnel_z * 0.1 + u.time * 0.05 + beat_hue);
+    let stereo_hue = pan * 0.1;
+    let hue = fract(tunnel_z * 0.1 + u.time * 0.05 + beat_hue + stereo_hue);
     let col = hsv_to_rgb(vec3<f32>(hue, 0.8, lines));
 
     // Vignette from tunnel depth
