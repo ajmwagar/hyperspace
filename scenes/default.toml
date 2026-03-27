@@ -1,0 +1,6 @@
+[center]
+shader = "shaders/hyperspace_tunnel.wgsl"
+
+[sides]
+shader = "shaders/engine_gauges.wgsl"
+symmetric = true
