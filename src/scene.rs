@@ -121,23 +121,29 @@ impl SceneConfig {
     fn resolve_three_output(&self) -> Vec<Viewport> {
         let mut viewports = Vec::new();
 
+        let has_center = self.outputs.contains_key("center");
+        let has_sides = self.outputs.contains_key("sides");
+
         if let Some(center) = self.outputs.get("center") {
+            // If center is the only viewport, go fullscreen
+            let rect = if has_sides { [0.0, 0.0, 0.5, 1.0] } else { [0.0, 0.0, 1.0, 1.0] };
             viewports.push(Viewport {
                 name: "center".into(),
                 shader_path: center.shader.clone(),
                 symmetric: center.symmetric,
                 post: center.post.clone(),
-                rect: [0.0, 0.0, 0.5, 1.0],
+                rect,
             });
         }
 
         if let Some(sides) = self.outputs.get("sides") {
+            let rect = if has_center { [0.5, 0.0, 0.5, 1.0] } else { [0.0, 0.0, 1.0, 1.0] };
             viewports.push(Viewport {
                 name: "sides".into(),
                 shader_path: sides.shader.clone(),
                 symmetric: sides.symmetric,
                 post: sides.post.clone(),
-                rect: [0.5, 0.0, 0.5, 1.0],
+                rect,
             });
         }
 
