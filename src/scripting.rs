@@ -12,7 +12,7 @@ fn lua_err(e: LuaError) -> anyhow::Error {
 
 /// Per-shader Lua scripting context.
 pub struct ShaderScript {
-    lua: Lua,
+    pub lua: Lua,
     pub state: Vec<f32>,
 }
 

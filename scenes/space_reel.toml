@@ -8,6 +8,7 @@ channels = "4,5"
 
 [center]
 shader = "shaders/video_player.wgsl"
+video_speed = 0.4   # slow-mo space footage
 video_sources = [
     "samples/earthrise.gif",
     "samples/rocket_launch.gif",

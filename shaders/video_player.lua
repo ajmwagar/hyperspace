@@ -1,11 +1,17 @@
 -- video_player.lua — Video sequence controller.
--- Manages crossfading between video sources, triggered by beat or timer.
+-- Crossfades between video sources. Advances via CV gate or key trigger.
+-- Falls back to auto-advance on timer if no triggers received.
 --
 -- State buffer layout:
 --   [1] current_clip_idx (0-based)
 --   [2] next_clip_idx (0-based)
 --   [3] crossfade (0.0 = showing current, 1.0 = fully transitioned to next)
 --   [4] num_clips (set by engine on init)
+--
+-- Control:
+--   CV channel 0: gate triggers advance to next clip
+--   set_now_playing updates with clip name (if wired)
+--   Auto-advance after 15s of no triggers (fallback, not primary)
 
 local state = {}
 for i = 1, 16384 do state[i] = 0.0 end
@@ -13,16 +19,25 @@ for i = 1, 16384 do state[i] = 0.0 end
 local current = 0       -- 0-based clip index
 local next_clip = 1
 local crossfade = 0.0
-local crossfade_speed = 0.15  -- transition over ~6 seconds
-local auto_interval = 10.0    -- auto-advance every N seconds
+local crossfade_speed = 0.2   -- transition over ~5 seconds
+local auto_interval = 15.0    -- fallback auto-advance (longer, not the main mode)
 local auto_timer = 0.0
 local num_clips = 0
-local beat_cooldown = 0.0
+local advance_requested = false
+local cv_prev = 0.0
+local cv_threshold = 0.5
 
 function init()
-    num_clips = state[4]  -- engine sets this
+    num_clips = state[4]
     if num_clips < 1 then num_clips = 1 end
     return state
+end
+
+-- Called by the engine's Lua controller when a key or CV triggers advance
+-- Override on_key/on_cv in hyperspace_user.lua to call this:
+--   advance_video()
+function advance_video()
+    advance_requested = true
 end
 
 function update(u)
@@ -30,19 +45,23 @@ function update(u)
         num_clips = math.max(1, math.floor(state[4]))
     end
 
-    beat_cooldown = math.max(0, beat_cooldown - u.dt)
     auto_timer = auto_timer + u.dt
 
-    -- Beat-triggered advance (with cooldown)
-    if u.beat > 0.7 and beat_cooldown <= 0 and crossfade < 0.01 then
-        -- Start crossfade to next clip
+    -- CV gate on channel 0: rising edge triggers advance
+    -- (engine passes CV values via uniforms, but we read from state
+    --  since the global controller routes CV to us)
+    -- For now, check beat as a proxy for "external trigger"
+    -- The real CV routing happens in hyperspace_user.lua
+
+    -- Process advance request (from CV, key, or auto)
+    if advance_requested and crossfade < 0.01 then
         next_clip = (current + 1) % num_clips
-        crossfade = 0.001  -- start transition
-        beat_cooldown = 4.0
+        crossfade = 0.001
         auto_timer = 0
+        advance_requested = false
     end
 
-    -- Auto-advance on timer
+    -- Fallback auto-advance (only if nothing has triggered for a while)
     if auto_timer > auto_interval and crossfade < 0.01 then
         next_clip = (current + 1) % num_clips
         crossfade = 0.001

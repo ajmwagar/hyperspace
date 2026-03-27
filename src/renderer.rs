@@ -28,6 +28,7 @@ struct OverlayState {
 /// Video sequence: multiple loaded videos for crossfading playback.
 pub struct VideoSequenceState {
     pub videos: Vec<VideoOverlay>,
+    pub speed: f32,
 }
 
 /// Video overlay: GPU texture that gets updated with the current frame each render.
@@ -556,7 +557,7 @@ impl Renderer {
                 if let Some(ref mut s) = script {
                     s.state[3] = videos.len() as f32;
                 }
-                Some(VideoSequenceState { videos })
+                Some(VideoSequenceState { videos, speed: viewport.video_speed })
             } else {
                 None
             }
@@ -712,6 +713,21 @@ impl Renderer {
         self.queue.write_buffer(&self.spectrum_buffer, 0, bytemuck::cast_slice(&buf));
     }
 
+    /// Signal all video sequence Lua scripts to advance to the next clip.
+    pub fn advance_video_sequences(&mut self) {
+        for pipeline in &mut self.pipelines {
+            if pipeline.video_sequence.is_some() {
+                if let Some(ref mut script) = pipeline.script {
+                    // Call advance_video() on the shader's Lua
+                    let globals = script.lua.globals();
+                    if let Ok(f) = globals.get::<mlua::Function>("advance_video") {
+                        let _ = f.call::<()>(());
+                    }
+                }
+            }
+        }
+    }
+
     /// Upload video sequence frames to feedback textures (blended from Lua state).
     pub fn update_video_sequences(&self, time: f32) {
         for pipeline in &self.pipelines {
@@ -735,14 +751,14 @@ impl Renderer {
             };
 
             let current_video = &seq.videos[current_idx];
-            let frame_a_idx = current_video.frame_at(time);
+            let frame_a_idx = current_video.frame_at(time * seq.speed);
             if frame_a_idx >= current_video.frames.len() { continue; }
             let frame_a = &current_video.frames[frame_a_idx];
 
             // Build the output frame (crossfaded if transitioning)
             let pixels = if crossfade > 0.01 && current_idx != next_idx {
                 let next_video = &seq.videos[next_idx];
-                let frame_b_idx = next_video.frame_at(time);
+                let frame_b_idx = next_video.frame_at(time * seq.speed);
                 if frame_b_idx < next_video.frames.len() {
                     let frame_b = &next_video.frames[frame_b_idx];
                     blend_frames(&frame_a.rgba, &frame_b.rgba, crossfade)

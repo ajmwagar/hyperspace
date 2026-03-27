@@ -17,6 +17,8 @@ pub struct ControlState {
     pub video_toggles: Vec<String>,
     /// Clip triggers (clip name)
     pub clip_triggers: Vec<String>,
+    /// Advance video sequence (triggered by CV/key)
+    pub advance_video: bool,
 }
 
 pub type SharedControlState = Arc<Mutex<ControlState>>;
@@ -101,6 +103,14 @@ impl Controller {
         }).map_err(lua_err)?;
         globals.set("trigger_clip", trigger_clip).map_err(lua_err)?;
 
+        // advance_video()
+        let s = shared.clone();
+        let adv_vid = lua.create_function(move |_, ()| {
+            s.lock().unwrap().advance_video = true;
+            Ok(())
+        }).map_err(lua_err)?;
+        globals.set("advance_video", adv_vid).map_err(lua_err)?;
+
         // log_info(msg)
         let log_fn = lua.create_function(|_, msg: String| {
             log::info!("[lua] {}", msg);
@@ -131,7 +141,16 @@ impl Controller {
         lua.push_str("end\n\n");
 
         // Build on_cv handler from clips + video overlays
+        lua.push_str("-- CV routing: channel 0 = advance video sequence (default)\n");
+        lua.push_str("local cv_prev = {}\n");
         lua.push_str("function on_cv(channel, value)\n");
+        // CV 0: advance video on rising edge
+        lua.push_str("  if channel == 0 then\n");
+        lua.push_str("    local was_high = cv_prev[0] or false\n");
+        lua.push_str("    local is_high = value > 0.5\n");
+        lua.push_str("    if is_high and not was_high then advance_video() end\n");
+        lua.push_str("    cv_prev[0] = is_high\n");
+        lua.push_str("  end\n");
         for clip in &config.clips {
             if let Some(ch) = clip.cv_channel {
                 lua.push_str(&format!(
@@ -189,6 +208,7 @@ impl Controller {
         state.video_toggles.clear();
         state.clip_triggers.clear();
         state.now_playing_changed = false;
+        state.advance_video = false;
         snapshot
     }
 }

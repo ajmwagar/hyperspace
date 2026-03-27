@@ -336,6 +336,9 @@ impl ApplicationHandler for App {
                         }
                     }
                 }
+                if ctrl.advance_video {
+                    state.renderer.advance_video_sequences();
+                }
                 for key in &ctrl.video_toggles {
                     state.renderer.toggle_video_by_key(key);
                 }
