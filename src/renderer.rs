@@ -10,10 +10,15 @@ const WAVEFORM_SIZE: usize = 512; // raw samples per channel
 // Buffer layout: [0..512) spectrum, [512..1024) waveform L, [1024..1536) waveform R
 const AUDIO_BUFFER_SIZE: usize = SPECTRUM_SIZE + WAVEFORM_SIZE * 2;
 
+use crate::scripting;
+
 /// A compiled shader pipeline for one viewport.
 pub struct ShaderPipeline {
     pub viewport: Viewport,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub state_buffer: wgpu::Buffer,
+    pub bind_group: wgpu::BindGroup,
+    pub script: Option<scripting::ShaderScript>,
 }
 
 /// The GPU renderer managing all shader pipelines.
@@ -25,7 +30,6 @@ pub struct Renderer {
     pub uniform_buffer: wgpu::Buffer,
     pub spectrum_buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
-    pub bind_group: wgpu::BindGroup,
     pub pipelines: Vec<ShaderPipeline>,
 }
 
@@ -98,7 +102,7 @@ impl Renderer {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
-        // Bind group layout: uniforms + spectrum
+        // Bind group layout: uniforms + audio + state
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("hyperspace_bgl"),
             entries: &[
@@ -122,20 +126,15 @@ impl Renderer {
                     },
                     count: None,
                 },
-            ],
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("hyperspace_bg"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: spectrum_buffer.as_entire_binding(),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
             ],
         });
@@ -148,7 +147,6 @@ impl Renderer {
             uniform_buffer,
             spectrum_buffer,
             bind_group_layout,
-            bind_group,
             pipelines: Vec::new(),
         })
     }
@@ -207,9 +205,49 @@ impl Renderer {
                     cache: None,
                 });
 
+        // Per-pipeline state buffer (for Lua scripts)
+        let state_data = vec![0.0f32; scripting::STATE_BUFFER_SIZE];
+        let state_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("{}_state", viewport.name)),
+            contents: bytemuck::cast_slice(&state_data),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Per-pipeline bind group (shared uniforms + audio, unique state)
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("{}_bg", viewport.name)),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.spectrum_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: state_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // Try to load paired Lua script
+        let script = match scripting::ShaderScript::load_for_shader(&viewport.shader_path) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("failed to load lua script for {}: {}", viewport.shader_path, e);
+                None
+            }
+        };
+
         self.pipelines.push(ShaderPipeline {
             viewport,
             render_pipeline,
+            state_buffer,
+            bind_group,
+            script,
         });
 
         Ok(())
@@ -236,6 +274,22 @@ impl Renderer {
             .copy_from_slice(&waveform_r[..wr_len]);
         self.queue
             .write_buffer(&self.spectrum_buffer, 0, bytemuck::cast_slice(&buf));
+    }
+
+    /// Run all Lua scripts and upload their state buffers.
+    pub fn update_scripts(&mut self, uniforms: &scripting::ScriptUniforms) {
+        for pipeline in &mut self.pipelines {
+            if let Some(ref mut script) = pipeline.script {
+                if let Err(e) = script.update(uniforms) {
+                    log::error!("lua script error for {}: {}", pipeline.viewport.name, e);
+                }
+                self.queue.write_buffer(
+                    &pipeline.state_buffer,
+                    0,
+                    bytemuck::cast_slice(&script.state),
+                );
+            }
+        }
     }
 
     /// Render all pipelines to the surface.
@@ -279,7 +333,7 @@ impl Renderer {
             pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
             pass.set_scissor_rect(x, y, w, h);
             pass.set_pipeline(&pipeline.render_pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(0, &pipeline.bind_group, &[]);
             pass.draw(0..3, 0..1); // fullscreen triangle
         }
 

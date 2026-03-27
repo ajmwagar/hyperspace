@@ -2,6 +2,7 @@ mod audio;
 mod cv;
 mod renderer;
 mod scene;
+mod scripting;
 mod uniforms;
 
 use anyhow::Result;
@@ -219,6 +220,17 @@ impl ApplicationHandler for App {
                 };
 
                 state.renderer.update_uniforms(&uniforms);
+                state.renderer.update_scripts(&scripting::ScriptUniforms {
+                    time: uniforms.time,
+                    delta_time: uniforms.delta_time,
+                    amplitude: uniforms.amplitude,
+                    beat: uniforms.beat,
+                    bass: uniforms.bass,
+                    mid: uniforms.mid,
+                    high: uniforms.high,
+                    amplitude_l: uniforms.amplitude_l,
+                    amplitude_r: uniforms.amplitude_r,
+                });
                 state.renderer.update_audio_buffer(
                     &audio.spectrum,
                     &audio.waveform_l,

@@ -53,7 +53,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Tunnel effect: warp radius
     let tunnel_z = 1.0 / (radius + 0.001);
-    let tunnel_x = angle / 3.14159;
+    // Use angle directly (not divided by pi) to avoid discontinuity artifacts
+    // The sin() pattern will repeat smoothly across the full 2π range
+    let tunnel_x = angle;
 
     // Stereo panning: bend the tunnel walls deeper into the Z axis
     // Near edge (large radius, small tunnel_z) stays stable
@@ -70,7 +72,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ty = tunnel_z + speed + stereo_bend * depth_factor * 0.3;
 
     // Grid pattern with audio reactivity
-    let grid = sin(tx * 10.0) * sin(ty * 10.0);
+    // tx is in radians; use integer multiple of pi for seamless wrapping
+    let grid = sin(tx * 3.0) * sin(ty * 10.0);
     let lines = smoothstep(0.0, 0.1 + u.amplitude * 0.5, abs(grid));
 
     // Color palette - shifts with beat, stereo tints L/R
