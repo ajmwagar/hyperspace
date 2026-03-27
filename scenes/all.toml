@@ -40,4 +40,4 @@ shader = "shaders/oscilloscope.wgsl"
 shader = "shaders/cellular.wgsl"
 
 [grid_11]
-shader = "shaders/hyperdrive.wgsl"
+shader = "shaders/gforce.wgsl"

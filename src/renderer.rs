@@ -3,21 +3,30 @@ use std::path::Path;
 use wgpu::util::DeviceExt;
 
 use crate::scene::Viewport;
+use crate::scripting;
 use crate::uniforms::Uniforms;
 
-const SPECTRUM_SIZE: usize = 512; // half of 1024-point FFT
-const WAVEFORM_SIZE: usize = 512; // raw samples per channel
-// Buffer layout: [0..512) spectrum, [512..1024) waveform L, [1024..1536) waveform R
+const SPECTRUM_SIZE: usize = 512;
+const WAVEFORM_SIZE: usize = 512;
 const AUDIO_BUFFER_SIZE: usize = SPECTRUM_SIZE + WAVEFORM_SIZE * 2;
+const FEEDBACK_SIZE: u32 = 512; // offscreen texture resolution for feedback pipelines
 
-use crate::scripting;
+/// Ping-pong framebuffers for feedback effects.
+struct FeedbackState {
+    textures: [wgpu::Texture; 2],
+    views: [wgpu::TextureView; 2],
+    /// Which texture to write to this frame (the other is read)
+    write_idx: usize,
+}
 
 /// A compiled shader pipeline for one viewport.
 pub struct ShaderPipeline {
     pub viewport: Viewport,
     pub render_pipeline: wgpu::RenderPipeline,
     pub state_buffer: wgpu::Buffer,
-    pub bind_group: wgpu::BindGroup,
+    /// Two bind groups for ping-pong: [0] reads texture 0, [1] reads texture 1
+    pub bind_groups: [wgpu::BindGroup; 2],
+    pub feedback: Option<FeedbackState>,
     pub script: Option<scripting::ShaderScript>,
 }
 
@@ -30,8 +39,40 @@ pub struct Renderer {
     pub uniform_buffer: wgpu::Buffer,
     pub spectrum_buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
+    pub sampler: wgpu::Sampler,
+    pub dummy_texture_view: wgpu::TextureView,
+    pub blit_pipeline: wgpu::RenderPipeline,
+    pub blit_bind_group_layout: wgpu::BindGroupLayout,
     pub pipelines: Vec<ShaderPipeline>,
 }
+
+const BLIT_SHADER: &str = r#"
+@group(0) @binding(0) var tex: texture_2d<f32>;
+@group(0) @binding(1) var tex_sampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(3.0, -1.0),
+        vec2<f32>(-1.0, 3.0),
+    );
+    var out: VertexOutput;
+    out.position = vec4<f32>(pos[idx], 0.0, 1.0);
+    out.uv = pos[idx] * 0.5 + 0.5;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(tex, tex_sampler, in.uv);
+}
+"#;
 
 impl Renderer {
     pub async fn new(window: std::sync::Arc<winit::window::Window>) -> Result<Self> {
@@ -87,22 +128,51 @@ impl Renderer {
         };
         surface.configure(&device, &surface_config);
 
-        // Create uniform buffer
+        // Uniform buffer
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("uniforms"),
             contents: bytemuck::bytes_of(&Uniforms::default()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        // Create FFT spectrum storage buffer
+        // Audio storage buffer
         let spectrum_data = vec![0.0f32; AUDIO_BUFFER_SIZE];
         let spectrum_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("spectrum"),
+            label: Some("audio"),
             contents: bytemuck::cast_slice(&spectrum_data),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
-        // Bind group layout: uniforms + audio + state
+        // Sampler for feedback texture
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("feedback_sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+
+        // 1x1 black dummy texture for non-feedback pipelines
+        let dummy_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("dummy"),
+            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            dummy_texture.as_image_copy(),
+            &[0u8, 0, 0, 255],
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: None },
+            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+        );
+        let dummy_texture_view = dummy_texture.create_view(&Default::default());
+
+        // Main bind group layout: uniforms + audio + state + sampler + prev_frame texture
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("hyperspace_bgl"),
             entries: &[
@@ -136,7 +206,86 @@ impl Renderer {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
+        });
+
+        // Blit pipeline (copies offscreen feedback texture to surface viewport)
+        let blit_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("blit_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blit"),
+            source: wgpu::ShaderSource::Wgsl(BLIT_SHADER.into()),
+        });
+
+        let blit_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("blit_layout"),
+            bind_group_layouts: &[&blit_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("blit"),
+            layout: Some(&blit_layout),
+            vertex: wgpu::VertexState {
+                module: &blit_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &blit_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
         });
 
         Ok(Self {
@@ -147,65 +296,102 @@ impl Renderer {
             uniform_buffer,
             spectrum_buffer,
             bind_group_layout,
+            sampler,
+            dummy_texture_view,
+            blit_pipeline,
+            blit_bind_group_layout,
             pipelines: Vec::new(),
+        })
+    }
+
+    fn create_feedback_texture(&self, label: &str) -> (wgpu::Texture, wgpu::TextureView) {
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width: FEEDBACK_SIZE,
+                height: FEEDBACK_SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&Default::default());
+        (tex, view)
+    }
+
+    fn create_bind_group(&self, state_buffer: &wgpu::Buffer, texture_view: &wgpu::TextureView) -> wgpu::BindGroup {
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: self.spectrum_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: state_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(texture_view) },
+            ],
         })
     }
 
     /// Load a shader and create a render pipeline for a viewport.
     pub fn load_shader(&mut self, viewport: Viewport) -> Result<()> {
         let shader_src = std::fs::read_to_string(Path::new(&viewport.shader_path))?;
-        let shader_module = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some(&viewport.name),
-                source: wgpu::ShaderSource::Wgsl(shader_src.into()),
-            });
 
-        let pipeline_layout =
-            self.device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some(&format!("{}_layout", viewport.name)),
-                    bind_group_layouts: &[&self.bind_group_layout],
-                    push_constant_ranges: &[],
-                });
+        // Detect if shader uses feedback (has prev_frame binding)
+        let uses_feedback = shader_src.contains("prev_frame");
 
-        let render_pipeline =
-            self.device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some(&viewport.name),
-                    layout: Some(&pipeline_layout),
-                    vertex: wgpu::VertexState {
-                        module: &shader_module,
-                        entry_point: Some("vs_main"),
-                        buffers: &[],
-                        compilation_options: Default::default(),
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &shader_module,
-                        entry_point: Some("fs_main"),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: self.surface_config.format,
-                            blend: Some(wgpu::BlendState::REPLACE),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                        compilation_options: Default::default(),
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        topology: wgpu::PrimitiveTopology::TriangleList,
-                        strip_index_format: None,
-                        front_face: wgpu::FrontFace::Ccw,
-                        cull_mode: None,
-                        polygon_mode: wgpu::PolygonMode::Fill,
-                        unclipped_depth: false,
-                        conservative: false,
-                    },
-                    depth_stencil: None,
-                    multisample: wgpu::MultisampleState::default(),
-                    multiview: None,
-                    cache: None,
-                });
+        let shader_module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(&viewport.name),
+            source: wgpu::ShaderSource::Wgsl(shader_src.into()),
+        });
 
-        // Per-pipeline state buffer (for Lua scripts)
+        let target_format = if uses_feedback {
+            self.surface_config.format // feedback renders to offscreen (same format)
+        } else {
+            self.surface_config.format
+        };
+
+        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(&format!("{}_layout", viewport.name)),
+            bind_group_layouts: &[&self.bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let render_pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(&viewport.name),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        // Per-pipeline state buffer
         let state_data = vec![0.0f32; scripting::STATE_BUFFER_SIZE];
         let state_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("{}_state", viewport.name)),
@@ -213,25 +399,32 @@ impl Renderer {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
-        // Per-pipeline bind group (shared uniforms + audio, unique state)
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some(&format!("{}_bg", viewport.name)),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.spectrum_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: state_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        // Create feedback textures if needed
+        let feedback = if uses_feedback {
+            log::info!("enabling feedback for '{}'", viewport.name);
+            let (tex_a, view_a) = self.create_feedback_texture(&format!("{}_fb_a", viewport.name));
+            let (tex_b, view_b) = self.create_feedback_texture(&format!("{}_fb_b", viewport.name));
+            Some(FeedbackState {
+                textures: [tex_a, tex_b],
+                views: [view_a, view_b],
+                write_idx: 0,
+            })
+        } else {
+            None
+        };
+
+        // Create two bind groups (for ping-pong: each reads a different texture)
+        let bind_groups = if let Some(ref fb) = feedback {
+            [
+                self.create_bind_group(&state_buffer, &fb.views[0]),
+                self.create_bind_group(&state_buffer, &fb.views[1]),
+            ]
+        } else {
+            [
+                self.create_bind_group(&state_buffer, &self.dummy_texture_view),
+                self.create_bind_group(&state_buffer, &self.dummy_texture_view),
+            ]
+        };
 
         // Try to load paired Lua script
         let script = match scripting::ShaderScript::load_for_shader(&viewport.shader_path) {
@@ -246,37 +439,30 @@ impl Renderer {
             viewport,
             render_pipeline,
             state_buffer,
-            bind_group,
+            bind_groups,
+            feedback,
             script,
         });
 
         Ok(())
     }
 
-    /// Update uniform buffer with new data.
     pub fn update_uniforms(&self, uniforms: &Uniforms) {
-        self.queue
-            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
+        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
     }
 
-    /// Update audio storage buffer: spectrum + stereo waveform.
     pub fn update_audio_buffer(&self, spectrum: &[f32], waveform_l: &[f32], waveform_r: &[f32]) {
         let mut buf = vec![0.0f32; AUDIO_BUFFER_SIZE];
-        // [0..512): spectrum
         let spec_len = spectrum.len().min(SPECTRUM_SIZE);
         buf[..spec_len].copy_from_slice(&spectrum[..spec_len]);
-        // [512..1024): waveform L
         let wl_len = waveform_l.len().min(WAVEFORM_SIZE);
         buf[SPECTRUM_SIZE..SPECTRUM_SIZE + wl_len].copy_from_slice(&waveform_l[..wl_len]);
-        // [1024..1536): waveform R
         let wr_len = waveform_r.len().min(WAVEFORM_SIZE);
         buf[SPECTRUM_SIZE + WAVEFORM_SIZE..SPECTRUM_SIZE + WAVEFORM_SIZE + wr_len]
             .copy_from_slice(&waveform_r[..wr_len]);
-        self.queue
-            .write_buffer(&self.spectrum_buffer, 0, bytemuck::cast_slice(&buf));
+        self.queue.write_buffer(&self.spectrum_buffer, 0, bytemuck::cast_slice(&buf));
     }
 
-    /// Run all Lua scripts and upload their state buffers.
     pub fn update_scripts(&mut self, uniforms: &scripting::ScriptUniforms) {
         for pipeline in &mut self.pipelines {
             if let Some(ref mut script) = pipeline.script {
@@ -293,53 +479,131 @@ impl Renderer {
     }
 
     /// Render all pipelines to the surface.
-    pub fn render(&self) -> Result<()> {
+    pub fn render(&mut self) -> Result<()> {
         let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("render"),
-            });
+        let surface_view = output.texture.create_view(&Default::default());
 
         let fb_w = self.surface_config.width as f32;
         let fb_h = self.surface_config.height as f32;
 
-        for pipeline in &self.pipelines {
+        for pipeline in &mut self.pipelines {
             let vp = &pipeline.viewport;
             let x = (vp.rect[0] * fb_w) as u32;
             let y = (vp.rect[1] * fb_h) as u32;
             let w = (vp.rect[2] * fb_w) as u32;
             let h = (vp.rect[3] * fb_h) as u32;
 
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(&vp.name),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            if let Some(ref mut fb) = pipeline.feedback {
+                // === Feedback pipeline: render to offscreen, then blit to surface ===
+                let write_idx = fb.write_idx;
+                let read_idx = 1 - write_idx;
 
-            pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
-            pass.set_scissor_rect(x, y, w, h);
-            pass.set_pipeline(&pipeline.render_pipeline);
-            pass.set_bind_group(0, &pipeline.bind_group, &[]);
-            pass.draw(0..3, 0..1); // fullscreen triangle
+                // Pass 1: render shader to offscreen texture[write_idx],
+                // binding texture[read_idx] as prev_frame
+                let read_bind_group = &pipeline.bind_groups[read_idx];
+
+                let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("feedback_render"),
+                });
+
+                {
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("feedback_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &fb.views[write_idx],
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+
+                    pass.set_pipeline(&pipeline.render_pipeline);
+                    pass.set_bind_group(0, read_bind_group, &[]);
+                    pass.draw(0..3, 0..1);
+                }
+
+                // Pass 2: blit offscreen texture to surface viewport
+                let blit_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("blit_bg"),
+                    layout: &self.blit_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&fb.views[write_idx]),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                });
+
+                {
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("blit_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &surface_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+
+                    pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
+                    pass.set_scissor_rect(x, y, w, h);
+                    pass.set_pipeline(&self.blit_pipeline);
+                    pass.set_bind_group(0, &blit_bg, &[]);
+                    pass.draw(0..3, 0..1);
+                }
+
+                self.queue.submit(std::iter::once(encoder.finish()));
+
+                // Swap ping-pong
+                fb.write_idx = read_idx;
+            } else {
+                // === Normal pipeline: render directly to surface ===
+                let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("direct_render"),
+                });
+
+                {
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some(&vp.name),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &surface_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+
+                    pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
+                    pass.set_scissor_rect(x, y, w, h);
+                    pass.set_pipeline(&pipeline.render_pipeline);
+                    pass.set_bind_group(0, &pipeline.bind_groups[0], &[]);
+                    pass.draw(0..3, 0..1);
+                }
+
+                self.queue.submit(std::iter::once(encoder.finish()));
+            }
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-
         Ok(())
     }
 
