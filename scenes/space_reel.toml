@@ -1,0 +1,23 @@
+# Space Reel — GIF sequence with shader effects.
+# Crossfades between space/Apollo footage with flow field and colormap.
+# Press keys or use CV to trigger. Beat auto-advances clips.
+
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
+[center]
+shader = "shaders/video_player.wgsl"
+video_sources = [
+    "samples/earthrise.gif",
+    "samples/rocket_launch.gif",
+    "samples/apollo1.gif",
+    "samples/apollo2.gif",
+    "samples/rocket_flight.gif",
+    "samples/lander.gif",
+    "samples/apollo_jump.gif",
+    "samples/apollo_faceplant.gif",
+    "samples/splashdown.gif",
+    "samples/1984.gif",
+]
+post = ["shaders/post/flow_spiral.wgsl", "shaders/post/colormap_neon.wgsl"]

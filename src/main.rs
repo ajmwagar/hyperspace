@@ -355,8 +355,10 @@ impl ApplicationHandler for App {
                     self.controller.on_beat();
                 }
 
-                // Upload current video overlay frames
-                state.renderer.update_video_frames(state.start_time.elapsed().as_secs_f32());
+                // Upload current video frames
+                let elapsed = state.start_time.elapsed().as_secs_f32();
+                state.renderer.update_video_sequences(elapsed);
+                state.renderer.update_video_frames(elapsed);
 
                 let uniforms = Uniforms {
                     time: state.start_time.elapsed().as_secs_f32(),

@@ -58,6 +58,9 @@ pub struct OutputConfig {
     pub post: Vec<String>,
     /// Overlay image path (PNG with alpha, composited on top)
     pub overlay: Option<String>,
+    /// Video sources for the video_player shader (crossfaded sequence)
+    #[serde(default)]
+    pub video_sources: Vec<String>,
     /// Video overlay path (MP4/GIF, loops continuously, toggled by key/CV)
     pub video_overlay: Option<String>,
     /// Key to toggle video overlay visibility (e.g. "t")
@@ -107,6 +110,8 @@ pub struct Viewport {
     pub post: Vec<String>,
     /// Overlay image path (PNG with alpha)
     pub overlay: Option<String>,
+    /// Video sources for video_player shader
+    pub video_sources: Vec<String>,
     /// Video overlay config
     pub video_overlay: Option<String>,
     pub video_overlay_key: Option<String>,
@@ -149,6 +154,7 @@ impl SceneConfig {
                 symmetric: center.symmetric,
                 post: center.post.clone(),
                 overlay: center.overlay.clone(),
+                video_sources: center.video_sources.clone(),
                 video_overlay: center.video_overlay.clone(),
                 video_overlay_key: center.video_overlay_key.clone(),
                 video_overlay_cv: center.video_overlay_cv,
@@ -164,6 +170,7 @@ impl SceneConfig {
                 symmetric: sides.symmetric,
                 post: sides.post.clone(),
                 overlay: sides.overlay.clone(),
+                video_sources: sides.video_sources.clone(),
                 video_overlay: sides.video_overlay.clone(),
                 video_overlay_key: sides.video_overlay_key.clone(),
                 video_overlay_cv: sides.video_overlay_cv,
@@ -193,6 +200,7 @@ impl SceneConfig {
                     symmetric: output.symmetric,
                     post: output.post.clone(),
                     overlay: output.overlay.clone(),
+                    video_sources: output.video_sources.clone(),
                     video_overlay: output.video_overlay.clone(),
                     video_overlay_key: output.video_overlay_key.clone(),
                     video_overlay_cv: output.video_overlay_cv,
@@ -217,6 +225,7 @@ impl SceneConfig {
                     symmetric: output.symmetric,
                     post: output.post.clone(),
                     overlay: output.overlay.clone(),
+                    video_sources: output.video_sources.clone(),
                     video_overlay: output.video_overlay.clone(),
                     video_overlay_key: output.video_overlay_key.clone(),
                     video_overlay_cv: output.video_overlay_cv,

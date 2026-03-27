@@ -25,6 +25,11 @@ struct OverlayState {
     bind_group: wgpu::BindGroup,
 }
 
+/// Video sequence: multiple loaded videos for crossfading playback.
+pub struct VideoSequenceState {
+    pub videos: Vec<VideoOverlay>,
+}
+
 /// Video overlay: GPU texture that gets updated with the current frame each render.
 pub struct VideoOverlayState {
     pub data: VideoOverlay,
@@ -47,6 +52,7 @@ pub struct ShaderPipeline {
     pub feedback: Option<FeedbackState>,
     pub overlay: Option<OverlayState>,
     pub video: Option<VideoOverlayState>,
+    pub video_sequence: Option<VideoSequenceState>,
     pub script: Option<scripting::ShaderScript>,
 }
 
@@ -368,7 +374,7 @@ impl Renderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: self.surface_config.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let view = tex.create_view(&Default::default());
@@ -525,12 +531,37 @@ impl Renderer {
         };
 
         // Try to load paired Lua script
-        let script = match scripting::ShaderScript::load_for_shader(&viewport.shader_path) {
+        let mut script = match scripting::ShaderScript::load_for_shader(&viewport.shader_path) {
             Ok(s) => s,
             Err(e) => {
                 log::error!("failed to load lua script for {}: {}", viewport.shader_path, e);
                 None
             }
+        };
+
+        // Load video sources for video_player
+        let video_sequence = if !viewport.video_sources.is_empty() {
+            let mut videos = Vec::new();
+            for src in &viewport.video_sources {
+                match VideoOverlay::load(src, 512) {
+                    Ok(v) => {
+                        log::info!("  video source: {} ({} frames)", src, v.frames.len());
+                        videos.push(v);
+                    }
+                    Err(e) => log::error!("  failed to load video source '{}': {}", src, e),
+                }
+            }
+            if !videos.is_empty() {
+                // Tell the Lua script how many clips we have (state[3] = num_clips, 0-indexed = [4] in Lua)
+                if let Some(ref mut s) = script {
+                    s.state[3] = videos.len() as f32;
+                }
+                Some(VideoSequenceState { videos })
+            } else {
+                None
+            }
+        } else {
+            None
         };
 
         // Load overlay image if specified
@@ -613,6 +644,7 @@ impl Renderer {
             feedback,
             overlay,
             video,
+            video_sequence,
             script,
         });
 
@@ -678,6 +710,69 @@ impl Renderer {
         buf[SPECTRUM_SIZE + WAVEFORM_SIZE..SPECTRUM_SIZE + WAVEFORM_SIZE + wr_len]
             .copy_from_slice(&waveform_r[..wr_len]);
         self.queue.write_buffer(&self.spectrum_buffer, 0, bytemuck::cast_slice(&buf));
+    }
+
+    /// Upload video sequence frames to feedback textures (blended from Lua state).
+    pub fn update_video_sequences(&self, time: f32) {
+        for pipeline in &self.pipelines {
+            let seq = match &pipeline.video_sequence {
+                Some(s) if !s.videos.is_empty() => s,
+                _ => continue,
+            };
+            let fb = match &pipeline.feedback {
+                Some(f) => f,
+                None => continue,
+            };
+
+            // Read crossfade state from Lua state buffer
+            let (current_idx, next_idx, crossfade) = if let Some(ref script) = pipeline.script {
+                let c = script.state[0] as usize;
+                let n = script.state[1] as usize;
+                let f = script.state[2];
+                (c.min(seq.videos.len() - 1), n.min(seq.videos.len() - 1), f)
+            } else {
+                (0, 0, 0.0)
+            };
+
+            let current_video = &seq.videos[current_idx];
+            let frame_a_idx = current_video.frame_at(time);
+            if frame_a_idx >= current_video.frames.len() { continue; }
+            let frame_a = &current_video.frames[frame_a_idx];
+
+            // Build the output frame (crossfaded if transitioning)
+            let pixels = if crossfade > 0.01 && current_idx != next_idx {
+                let next_video = &seq.videos[next_idx];
+                let frame_b_idx = next_video.frame_at(time);
+                if frame_b_idx < next_video.frames.len() {
+                    let frame_b = &next_video.frames[frame_b_idx];
+                    blend_frames(&frame_a.rgba, &frame_b.rgba, crossfade)
+                } else {
+                    frame_a.rgba.clone()
+                }
+            } else {
+                frame_a.rgba.clone()
+            };
+
+            // Upload to the feedback texture that will be read as prev_frame
+            let target_idx = fb.result_idx;
+            let w = current_video.width;
+            let h = current_video.height;
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &fb.textures[target_idx],
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * w),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            );
+        }
     }
 
     /// Upload the current video frame for all video overlays.
@@ -1014,4 +1109,14 @@ impl Renderer {
             self.surface.configure(&self.device, &self.surface_config);
         }
     }
+}
+
+/// Blend two RGBA frames by crossfade amount (0.0 = a, 1.0 = b).
+fn blend_frames(a: &[u8], b: &[u8], t: f32) -> Vec<u8> {
+    let len = a.len().min(b.len());
+    let t_fixed = (t * 256.0) as u16;
+    let inv_t = 256 - t_fixed;
+    (0..len)
+        .map(|i| ((a[i] as u16 * inv_t + b[i] as u16 * t_fixed) >> 8) as u8)
+        .collect()
 }
