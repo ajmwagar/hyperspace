@@ -1,0 +1,7 @@
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
+[center]
+shader = "shaders/gforce.wgsl"
+overlay = "assets/overlay_hud.png"

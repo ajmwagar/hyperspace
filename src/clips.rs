@@ -99,6 +99,7 @@ impl ClipBoard {
                     shader_path: clip.shader.clone(),
                     symmetric: false,
                     post: clip.post.clone(),
+                    overlay: None,
                     rect: [0.0, 0.0, 1.0, 1.0], // full screen
                 }]
             }
@@ -108,6 +109,7 @@ impl ClipBoard {
                     shader_path: clip.shader.clone(),
                     symmetric: false,
                     post: clip.post.clone(),
+                    overlay: None,
                     rect: [0.0, 0.0, 1.0, 1.0], // full screen for clips
                 }]
             }

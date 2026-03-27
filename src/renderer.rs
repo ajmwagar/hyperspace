@@ -19,6 +19,11 @@ struct FeedbackState {
     result_idx: usize,
 }
 
+/// Loaded overlay image for compositing on top of a viewport.
+struct OverlayState {
+    bind_group: wgpu::BindGroup,
+}
+
 /// A compiled shader pipeline for one viewport.
 pub struct ShaderPipeline {
     pub viewport: Viewport,
@@ -29,6 +34,7 @@ pub struct ShaderPipeline {
     /// Two bind groups for ping-pong: [0] reads texture 0, [1] reads texture 1
     pub bind_groups: [wgpu::BindGroup; 2],
     pub feedback: Option<FeedbackState>,
+    pub overlay: Option<OverlayState>,
     pub script: Option<scripting::ShaderScript>,
 }
 
@@ -45,6 +51,7 @@ pub struct Renderer {
     pub dummy_texture_view: wgpu::TextureView,
     pub blit_pipeline: wgpu::RenderPipeline,
     pub blit_bind_group_layout: wgpu::BindGroupLayout,
+    pub overlay_pipeline: wgpu::RenderPipeline, // same shader as blit but with alpha blending
     pub pipelines: Vec<ShaderPipeline>,
 }
 
@@ -290,6 +297,36 @@ impl Renderer {
             cache: None,
         });
 
+        // Overlay pipeline: same as blit but with alpha blending
+        let overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("overlay"),
+            layout: Some(&blit_layout),
+            vertex: wgpu::VertexState {
+                module: &blit_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &blit_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         Ok(Self {
             device,
             queue,
@@ -302,6 +339,7 @@ impl Renderer {
             dummy_texture_view,
             blit_pipeline,
             blit_bind_group_layout,
+            overlay_pipeline,
             pipelines: Vec::new(),
         })
     }
@@ -483,6 +521,22 @@ impl Renderer {
             }
         };
 
+        // Load overlay image if specified
+        let overlay = if let Some(ref overlay_path) = viewport.overlay {
+            match self.load_overlay(overlay_path) {
+                Ok(ovl) => {
+                    log::info!("  overlay: {}", overlay_path);
+                    Some(ovl)
+                }
+                Err(e) => {
+                    log::error!("failed to load overlay '{}': {}", overlay_path, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         self.pipelines.push(ShaderPipeline {
             viewport,
             render_pipeline,
@@ -490,10 +544,56 @@ impl Renderer {
             state_buffer,
             bind_groups,
             feedback,
+            overlay,
             script,
         });
 
         Ok(())
+    }
+
+    fn load_overlay(&self, path: &str) -> Result<OverlayState> {
+        let img = image::open(path)?.to_rgba8();
+        let (w, h) = img.dimensions();
+
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(path),
+            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        self.queue.write_texture(
+            texture.as_image_copy(),
+            &img,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * w),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+
+        let view = texture.create_view(&Default::default());
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay_bg"),
+            layout: &self.blit_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+
+        Ok(OverlayState { bind_group })
     }
 
     pub fn update_uniforms(&self, uniforms: &Uniforms) {
@@ -710,6 +810,29 @@ impl Renderer {
                 pass.set_scissor_rect(x, y, w, h);
                 pass.set_pipeline(&pipeline.render_pipeline);
                 pass.set_bind_group(0, &pipeline.bind_groups[0], &[]);
+                pass.draw(0..3, 0..1);
+            }
+
+            // Overlay compositing (alpha-blended on top of whatever just rendered)
+            if let Some(ref ovl) = pipeline.overlay {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("overlay_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &surface_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
+                pass.set_scissor_rect(x, y, w, h);
+                pass.set_pipeline(&self.overlay_pipeline);
+                pass.set_bind_group(0, &ovl.bind_group, &[]);
                 pass.draw(0..3, 0..1);
             }
         }

@@ -54,6 +54,8 @@ pub struct OutputConfig {
     /// Post-processing shader chain (applied in order after main shader)
     #[serde(default)]
     pub post: Vec<String>,
+    /// Overlay image path (PNG with alpha, composited on top)
+    pub overlay: Option<String>,
 }
 
 /// Display layout mode.
@@ -95,6 +97,8 @@ pub struct Viewport {
     pub symmetric: bool,
     /// Post-processing shader paths (applied in order)
     pub post: Vec<String>,
+    /// Overlay image path (PNG with alpha)
+    pub overlay: Option<String>,
     /// Normalized rect within the framebuffer: (x, y, w, h) in 0..1
     pub rect: [f32; 4],
 }
@@ -132,6 +136,7 @@ impl SceneConfig {
                 shader_path: center.shader.clone(),
                 symmetric: center.symmetric,
                 post: center.post.clone(),
+                overlay: center.overlay.clone(),
                 rect,
             });
         }
@@ -143,6 +148,7 @@ impl SceneConfig {
                 shader_path: sides.shader.clone(),
                 symmetric: sides.symmetric,
                 post: sides.post.clone(),
+                overlay: sides.overlay.clone(),
                 rect,
             });
         }
@@ -168,6 +174,7 @@ impl SceneConfig {
                     shader_path: output.shader.clone(),
                     symmetric: output.symmetric,
                     post: output.post.clone(),
+                    overlay: output.overlay.clone(),
                     rect: [
                         col as f32 * cell_w,
                         row as f32 * cell_h,
@@ -188,6 +195,7 @@ impl SceneConfig {
                     shader_path: output.shader.clone(),
                     symmetric: output.symmetric,
                     post: output.post.clone(),
+                    overlay: output.overlay.clone(),
                     rect: [
                         col as f32 * cell_w,
                         row as f32 * cell_h,
