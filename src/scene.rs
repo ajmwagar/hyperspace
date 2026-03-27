@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct SceneConfig {
     #[serde(default)]
     pub audio: AudioConfig,
@@ -44,6 +44,8 @@ pub struct AudioConfig {
     pub device: Option<String>,
     /// Comma-separated channel pair, e.g. "4,5" for loopback. Default: auto-detect.
     pub channels: Option<String>,
+    /// Now playing text, e.g. "Artist - Title". Updated dynamically via Lua API.
+    pub now_playing: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

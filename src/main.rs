@@ -1,9 +1,11 @@
 mod audio;
 mod clips;
+mod control;
 mod cv;
 mod renderer;
 mod scene;
 mod scripting;
+mod text;
 mod uniforms;
 mod video;
 
@@ -28,6 +30,11 @@ struct App {
     cv_shared: cv::SharedCvData,
     // Visual sample board
     clip_board: clips::ClipBoard,
+    // Global Lua controller
+    controller: control::Controller,
+    control_state: control::SharedControlState,
+    // Text overlay for now playing
+    text_renderer: text::TextRenderer,
     // Keep audio stream alive
     _audio_stream: Option<cpal::Stream>,
 }
@@ -37,6 +44,13 @@ struct AppState {
     renderer: renderer::Renderer,
     start_time: Instant,
     last_frame: Instant,
+    /// Now playing overlay texture (rendered from text, uploaded on change)
+    now_playing_texture: Option<NowPlayingOverlay>,
+}
+
+struct NowPlayingOverlay {
+    texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
 }
 
 impl App {
@@ -55,6 +69,12 @@ impl App {
             .map(|c| c.clips.clone())
             .unwrap_or_default();
         let clip_board = clips::ClipBoard::new(clip_configs);
+
+        // Create Lua controller from config
+        let default_config = scene::SceneConfig::from_str("").unwrap_or_default();
+        let config_ref = scene_config.as_ref().unwrap_or(&default_config);
+        let (controller, control_state) = control::Controller::new(config_ref)?;
+        let text_renderer = text::TextRenderer::new(512, 512);
 
         // Parse channel override from scene config
         let channels = audio_config
@@ -86,6 +106,9 @@ impl App {
             audio_shared,
             cv_shared,
             clip_board,
+            controller,
+            control_state,
+            text_renderer,
             _audio_stream: audio_stream,
         })
     }
@@ -160,11 +183,26 @@ impl ApplicationHandler for App {
 
         window.request_redraw();
 
+        // Create now playing overlay if set in config
+        let np_overlay = {
+            let ctrl = self.control_state.lock().unwrap();
+            if !ctrl.now_playing_artist.is_empty() || !ctrl.now_playing_title.is_empty() {
+                let pixels = self.text_renderer.render_now_playing(
+                    &ctrl.now_playing_artist,
+                    &ctrl.now_playing_title,
+                );
+                Some(create_now_playing_overlay(&renderer, &pixels))
+            } else {
+                None
+            }
+        };
+
         self.state = Some(AppState {
             window,
             renderer,
             start_time: Instant::now(),
             last_frame: Instant::now(),
+            now_playing_texture: np_overlay,
         });
     }
 
@@ -213,9 +251,11 @@ impl ApplicationHandler for App {
                         _ => None,
                     };
                     if let Some(key) = key_str {
-                        // Try video overlay toggle first
+                        // Pass to Lua controller first
+                        self.controller.on_key(key);
+                        // Then video overlay toggle
                         state.renderer.toggle_video_by_key(key);
-                        // Then try clip board
+                        // Then clip board
                         if self.clip_board.on_key(key, &mut state.renderer, self.layout_mode) {
                             return;
                         }
@@ -274,11 +314,46 @@ impl ApplicationHandler for App {
                 // Gather CV data
                 let cv = *self.cv_shared.lock().unwrap();
 
+                // Pass CV to Lua controller
+                for ch in 0..8 {
+                    self.controller.on_cv(ch, cv[ch]);
+                }
+
                 // Check CV triggers for clip board and video overlays
                 if !self.clip_board.is_empty() {
                     self.clip_board.check_cv(&cv, &mut state.renderer, self.layout_mode);
                 }
                 state.renderer.gate_video_by_cv(&cv);
+
+                // Process controller actions (scene switches, now playing, etc.)
+                let ctrl = self.controller.drain();
+                if let Some(scene_path) = ctrl.pending_scene {
+                    log::info!("[controller] switching scene: {}", scene_path);
+                    if let Ok(config) = scene::SceneConfig::load(std::path::Path::new(&scene_path)) {
+                        state.renderer.pipelines.clear();
+                        for vp in config.resolve_viewports(self.layout_mode) {
+                            let _ = state.renderer.load_shader(vp);
+                        }
+                    }
+                }
+                for key in &ctrl.video_toggles {
+                    state.renderer.toggle_video_by_key(key);
+                }
+
+                // Update now playing overlay if text changed
+                if ctrl.now_playing_changed {
+                    let pixels = self.text_renderer.render_now_playing(
+                        &ctrl.now_playing_artist,
+                        &ctrl.now_playing_title,
+                    );
+                    state.now_playing_texture = Some(create_now_playing_overlay(&state.renderer, &pixels));
+                    log::info!("now playing: {} - {}", ctrl.now_playing_artist, ctrl.now_playing_title);
+                }
+
+                // Beat detection → notify controller
+                if audio.beat > 0.7 {
+                    self.controller.on_beat();
+                }
 
                 // Upload current video overlay frames
                 state.renderer.update_video_frames(state.start_time.elapsed().as_secs_f32());
@@ -328,7 +403,8 @@ impl ApplicationHandler for App {
 
                 drop(audio); // release lock before render
 
-                if let Err(e) = state.renderer.render() {
+                let np_bg = state.now_playing_texture.as_ref().map(|np| &np.bind_group);
+                if let Err(e) = state.renderer.render_with_overlay(np_bg) {
                     log::error!("render error: {}", e);
                 }
 
@@ -362,4 +438,46 @@ fn main() -> Result<()> {
     event_loop.run_app(&mut app)?;
 
     Ok(())
+}
+
+fn create_now_playing_overlay(renderer: &renderer::Renderer, pixels: &[u8]) -> NowPlayingOverlay {
+    use wgpu::util::DeviceExt;
+    let w = 512u32;
+    let h = 512u32;
+
+    let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("now_playing"),
+        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+
+    renderer.queue.write_texture(
+        texture.as_image_copy(),
+        pixels,
+        wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * w), rows_per_image: Some(h) },
+        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+    );
+
+    let view = texture.create_view(&Default::default());
+    let bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("now_playing_bg"),
+        layout: &renderer.blit_bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&renderer.sampler),
+            },
+        ],
+    });
+
+    NowPlayingOverlay { texture, bind_group }
 }

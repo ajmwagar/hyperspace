@@ -1,0 +1,7 @@
+[audio]
+device = "Scarlett"
+channels = "4,5"
+now_playing = "Boards of Canada - Music Has the Right to Children"
+
+[center]
+shader = "shaders/gforce.wgsl"

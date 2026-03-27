@@ -747,7 +747,7 @@ impl Renderer {
     }
 
     /// Render all pipelines to the surface.
-    pub fn render(&mut self) -> Result<()> {
+    pub fn render_with_overlay(&mut self, now_playing_bg: Option<&wgpu::BindGroup>) -> Result<()> {
         let output = self.surface.get_current_texture()?;
         let surface_view = output.texture.create_view(&Default::default());
 
@@ -979,6 +979,27 @@ impl Renderer {
                     pass.draw(0..3, 0..1);
                 }
             }
+        }
+
+        // Now playing text overlay (full-screen, alpha-blended)
+        if let Some(np_bg) = now_playing_bg {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("now_playing"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_pipeline(&self.overlay_pipeline);
+            pass.set_bind_group(0, np_bg, &[]);
+            pass.draw(0..3, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
