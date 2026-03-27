@@ -1,4 +1,5 @@
 mod audio;
+mod clips;
 mod cv;
 mod renderer;
 mod scene;
@@ -24,6 +25,8 @@ struct App {
     // Audio/CV shared state (created early, before window)
     audio_shared: audio::SharedAudioData,
     cv_shared: cv::SharedCvData,
+    // Visual sample board
+    clip_board: clips::ClipBoard,
     // Keep audio stream alive
     _audio_stream: Option<cpal::Stream>,
 }
@@ -40,11 +43,17 @@ impl App {
         let audio_shared = audio::new_shared();
         let cv_shared = cv::new_shared();
 
-        // Load scene config early to get audio settings
-        let audio_config = scene::SceneConfig::load(&scene_path)
-            .ok()
-            .map(|c| c.audio)
+        // Load scene config early to get audio settings + clips
+        let scene_config = scene::SceneConfig::load(&scene_path).ok();
+        let audio_config = scene_config
+            .as_ref()
+            .map(|c| c.audio.clone())
             .unwrap_or_default();
+        let clip_configs = scene_config
+            .as_ref()
+            .map(|c| c.clips.clone())
+            .unwrap_or_default();
+        let clip_board = clips::ClipBoard::new(clip_configs);
 
         // Parse channel override from scene config
         let channels = audio_config
@@ -75,6 +84,7 @@ impl App {
             state: None,
             audio_shared,
             cv_shared,
+            clip_board,
             _audio_stream: audio_stream,
         })
     }
@@ -182,6 +192,29 @@ impl ApplicationHandler for App {
                 } else if event.physical_key == PhysicalKey::Code(KeyCode::Escape) {
                     event_loop.exit();
                 } else {
+                    // Try clip board first (letter keys for clips)
+                    let key_str = match event.physical_key {
+                        PhysicalKey::Code(KeyCode::KeyQ) => Some("q"),
+                        PhysicalKey::Code(KeyCode::KeyW) => Some("w"),
+                        PhysicalKey::Code(KeyCode::KeyE) => Some("e"),
+                        PhysicalKey::Code(KeyCode::KeyR) => Some("r"),
+                        PhysicalKey::Code(KeyCode::KeyA) => Some("a"),
+                        PhysicalKey::Code(KeyCode::KeyS) => Some("s"),
+                        PhysicalKey::Code(KeyCode::KeyD) => Some("d"),
+                        PhysicalKey::Code(KeyCode::KeyF) => Some("f"),
+                        PhysicalKey::Code(KeyCode::KeyZ) => Some("z"),
+                        PhysicalKey::Code(KeyCode::KeyX) => Some("x"),
+                        PhysicalKey::Code(KeyCode::KeyC) => Some("c"),
+                        PhysicalKey::Code(KeyCode::KeyV) => Some("v"),
+                        _ => None,
+                    };
+                    if let Some(key) = key_str {
+                        if self.clip_board.on_key(key, &mut state.renderer, self.layout_mode) {
+                            // Clip was triggered, skip scene switching
+                            return;
+                        }
+                    }
+
                     // Scene switching: number keys 1-9, 0 load scene files
                     let scene_idx = match event.physical_key {
                         PhysicalKey::Code(KeyCode::Digit1) => Some(0),
@@ -197,7 +230,6 @@ impl ApplicationHandler for App {
                         _ => None,
                     };
                     if let Some(idx) = scene_idx {
-                        // Find scene files and load by index
                         if let Ok(mut entries) = std::fs::read_dir("scenes") {
                             let mut scenes: Vec<_> = entries
                                 .filter_map(|e| e.ok())
@@ -235,6 +267,11 @@ impl ApplicationHandler for App {
 
                 // Gather CV data
                 let cv = *self.cv_shared.lock().unwrap();
+
+                // Check CV triggers for clip board
+                if !self.clip_board.is_empty() {
+                    self.clip_board.check_cv(&cv, &mut state.renderer, self.layout_mode);
+                }
 
                 let uniforms = Uniforms {
                     time: state.start_time.elapsed().as_secs_f32(),

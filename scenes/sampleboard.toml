@@ -1,0 +1,80 @@
+# Visual Sample Board — press keys to trigger visual clips.
+# Like an MPC for visuals. Letter keys = pads.
+#
+# Layout: QWER / ASDF / ZXCV (3 rows of 4, like a pad grid)
+#
+# Start with any scene, press letter keys to switch clips instantly.
+
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
+[[clips]]
+name = "tunnel spiral"
+shader = "shaders/hyperspace_tunnel.wgsl"
+post = ["shaders/post/flow_spiral.wgsl", "shaders/post/colormap_neon.wgsl"]
+key = "q"
+
+[[clips]]
+name = "gauges fire"
+shader = "shaders/engine_gauges.wgsl"
+post = ["shaders/post/colormap_fire.wgsl"]
+key = "w"
+
+[[clips]]
+name = "plasma drift"
+shader = "shaders/plasma_vortex.wgsl"
+post = ["shaders/post/flow_drift.wgsl"]
+key = "e"
+
+[[clips]]
+name = "neon grid"
+shader = "shaders/neon_grid.wgsl"
+key = "r"
+
+[[clips]]
+name = "fractal neon"
+shader = "shaders/fractal_pulse.wgsl"
+post = ["shaders/post/colormap_neon.wgsl"]
+key = "a"
+
+[[clips]]
+name = "hyperdrive"
+shader = "shaders/hyperdrive.wgsl"
+key = "s"
+
+[[clips]]
+name = "classic spiral"
+shader = "shaders/classic_viz.wgsl"
+post = ["shaders/post/flow_spiral.wgsl", "shaders/post/colormap_fire.wgsl"]
+key = "d"
+
+[[clips]]
+name = "cyberpunk"
+shader = "shaders/cyberpunk.wgsl"
+key = "f"
+
+[[clips]]
+name = "lava lamp"
+shader = "shaders/lava_lamp.wgsl"
+key = "z"
+
+[[clips]]
+name = "oscilloscope"
+shader = "shaders/oscilloscope.wgsl"
+post = ["shaders/post/flow_spiral.wgsl"]
+key = "x"
+
+[[clips]]
+name = "game of life"
+shader = "shaders/cellular.wgsl"
+key = "c"
+
+[[clips]]
+name = "g-force"
+shader = "shaders/gforce.wgsl"
+key = "v"
+
+# Default display (before any clip is triggered)
+[center]
+shader = "shaders/gforce.wgsl"

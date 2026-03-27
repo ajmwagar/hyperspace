@@ -7,8 +7,35 @@ use std::path::Path;
 pub struct SceneConfig {
     #[serde(default)]
     pub audio: AudioConfig,
+    /// Clip definitions for the visual sample board.
+    /// Triggered by keyboard (key field) or CV (cv_channel + cv_threshold).
+    #[serde(default)]
+    pub clips: Vec<ClipConfig>,
     #[serde(flatten)]
     pub outputs: HashMap<String, OutputConfig>,
+}
+
+/// A triggerable visual clip — like a pad on an MPC but for visuals.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ClipConfig {
+    /// Display name
+    pub name: String,
+    /// Main shader path
+    pub shader: String,
+    /// Post-processing chain
+    #[serde(default)]
+    pub post: Vec<String>,
+    /// Keyboard key to trigger (e.g. "q", "w", "e", "a", "s", "d")
+    pub key: Option<String>,
+    /// CV channel (0-7) that triggers this clip
+    pub cv_channel: Option<usize>,
+    /// CV threshold (0.0-1.0) — clip triggers when CV exceeds this. Default: 0.5
+    #[serde(default = "default_cv_threshold")]
+    pub cv_threshold: f32,
+}
+
+fn default_cv_threshold() -> f32 {
+    0.5
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
