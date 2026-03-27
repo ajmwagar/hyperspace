@@ -5,6 +5,7 @@ use wgpu::util::DeviceExt;
 use crate::scene::Viewport;
 use crate::scripting;
 use crate::uniforms::Uniforms;
+use crate::video::VideoOverlay;
 
 const SPECTRUM_SIZE: usize = 512;
 const WAVEFORM_SIZE: usize = 512;
@@ -24,6 +25,16 @@ struct OverlayState {
     bind_group: wgpu::BindGroup,
 }
 
+/// Video overlay: GPU texture that gets updated with the current frame each render.
+pub struct VideoOverlayState {
+    pub data: VideoOverlay,
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub bind_group: wgpu::BindGroup,
+    pub toggle_key: Option<String>,
+    pub cv_channel: Option<usize>,
+}
+
 /// A compiled shader pipeline for one viewport.
 pub struct ShaderPipeline {
     pub viewport: Viewport,
@@ -35,6 +46,7 @@ pub struct ShaderPipeline {
     pub bind_groups: [wgpu::BindGroup; 2],
     pub feedback: Option<FeedbackState>,
     pub overlay: Option<OverlayState>,
+    pub video: Option<VideoOverlayState>,
     pub script: Option<scripting::ShaderScript>,
 }
 
@@ -537,6 +549,61 @@ impl Renderer {
             None
         };
 
+        // Load video overlay if specified
+        let video = if let Some(ref video_path) = viewport.video_overlay {
+            match VideoOverlay::load(video_path, 512) {
+                Ok(mut vid_data) => {
+                    // Create GPU texture for the video frames
+                    let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("video_overlay"),
+                        size: wgpu::Extent3d {
+                            width: vid_data.width,
+                            height: vid_data.height,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    });
+                    let view = texture.create_view(&Default::default());
+                    let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("video_overlay_bg"),
+                        layout: &self.blit_bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(&self.sampler),
+                            },
+                        ],
+                    });
+                    vid_data.visible = true; // start visible by default
+                    let toggle_key = viewport.video_overlay_key.clone();
+                    let cv_channel = viewport.video_overlay_cv;
+                    Some(VideoOverlayState {
+                        data: vid_data,
+                        texture,
+                        view,
+                        bind_group,
+                        toggle_key,
+                        cv_channel,
+                    })
+                }
+                Err(e) => {
+                    log::error!("failed to load video overlay '{}': {}", video_path, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         self.pipelines.push(ShaderPipeline {
             viewport,
             render_pipeline,
@@ -545,6 +612,7 @@ impl Renderer {
             bind_groups,
             feedback,
             overlay,
+            video,
             script,
         });
 
@@ -610,6 +678,57 @@ impl Renderer {
         buf[SPECTRUM_SIZE + WAVEFORM_SIZE..SPECTRUM_SIZE + WAVEFORM_SIZE + wr_len]
             .copy_from_slice(&waveform_r[..wr_len]);
         self.queue.write_buffer(&self.spectrum_buffer, 0, bytemuck::cast_slice(&buf));
+    }
+
+    /// Upload the current video frame for all video overlays.
+    pub fn update_video_frames(&self, time: f32) {
+        for pipeline in &self.pipelines {
+            if let Some(ref vid) = pipeline.video {
+                if !vid.data.visible || vid.data.frames.is_empty() {
+                    continue;
+                }
+                let frame_idx = vid.data.frame_at(time);
+                let frame = &vid.data.frames[frame_idx];
+                self.queue.write_texture(
+                    vid.texture.as_image_copy(),
+                    &frame.rgba,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * vid.data.width),
+                        rows_per_image: Some(vid.data.height),
+                    },
+                    wgpu::Extent3d {
+                        width: vid.data.width,
+                        height: vid.data.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+    }
+
+    /// Toggle video overlay by key.
+    pub fn toggle_video_by_key(&mut self, key: &str) {
+        for pipeline in &mut self.pipelines {
+            if let Some(ref mut vid) = pipeline.video {
+                if vid.toggle_key.as_deref() == Some(key) {
+                    vid.data.toggle();
+                }
+            }
+        }
+    }
+
+    /// Gate video overlay by CV (high = visible).
+    pub fn gate_video_by_cv(&mut self, cv_data: &[f32; 8]) {
+        for pipeline in &mut self.pipelines {
+            if let Some(ref mut vid) = pipeline.video {
+                if let Some(ch) = vid.cv_channel {
+                    if ch < 8 {
+                        vid.data.visible = cv_data[ch] > 0.5;
+                    }
+                }
+            }
+        }
     }
 
     pub fn update_scripts(&mut self, uniforms: &scripting::ScriptUniforms) {
@@ -813,7 +932,7 @@ impl Renderer {
                 pass.draw(0..3, 0..1);
             }
 
-            // Overlay compositing (alpha-blended on top of whatever just rendered)
+            // Static overlay compositing (alpha-blended on top)
             if let Some(ref ovl) = pipeline.overlay {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("overlay_pass"),
@@ -834,6 +953,31 @@ impl Renderer {
                 pass.set_pipeline(&self.overlay_pipeline);
                 pass.set_bind_group(0, &ovl.bind_group, &[]);
                 pass.draw(0..3, 0..1);
+            }
+
+            // Video overlay compositing (alpha-blended, only when visible)
+            if let Some(ref vid) = pipeline.video {
+                if vid.data.visible {
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("video_overlay_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &surface_view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+                    pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
+                    pass.set_scissor_rect(x, y, w, h);
+                    pass.set_pipeline(&self.overlay_pipeline);
+                    pass.set_bind_group(0, &vid.bind_group, &[]);
+                    pass.draw(0..3, 0..1);
+                }
             }
         }
 

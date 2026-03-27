@@ -5,6 +5,7 @@ mod renderer;
 mod scene;
 mod scripting;
 mod uniforms;
+mod video;
 
 use anyhow::Result;
 use scene::LayoutMode;
@@ -206,11 +207,16 @@ impl ApplicationHandler for App {
                         PhysicalKey::Code(KeyCode::KeyX) => Some("x"),
                         PhysicalKey::Code(KeyCode::KeyC) => Some("c"),
                         PhysicalKey::Code(KeyCode::KeyV) => Some("v"),
+                        PhysicalKey::Code(KeyCode::KeyT) => Some("t"),
+                        PhysicalKey::Code(KeyCode::KeyG) => Some("g"),
+                        PhysicalKey::Code(KeyCode::KeyB) => Some("b"),
                         _ => None,
                     };
                     if let Some(key) = key_str {
+                        // Try video overlay toggle first
+                        state.renderer.toggle_video_by_key(key);
+                        // Then try clip board
                         if self.clip_board.on_key(key, &mut state.renderer, self.layout_mode) {
-                            // Clip was triggered, skip scene switching
                             return;
                         }
                     }
@@ -268,10 +274,14 @@ impl ApplicationHandler for App {
                 // Gather CV data
                 let cv = *self.cv_shared.lock().unwrap();
 
-                // Check CV triggers for clip board
+                // Check CV triggers for clip board and video overlays
                 if !self.clip_board.is_empty() {
                     self.clip_board.check_cv(&cv, &mut state.renderer, self.layout_mode);
                 }
+                state.renderer.gate_video_by_cv(&cv);
+
+                // Upload current video overlay frames
+                state.renderer.update_video_frames(state.start_time.elapsed().as_secs_f32());
 
                 let uniforms = Uniforms {
                     time: state.start_time.elapsed().as_secs_f32(),

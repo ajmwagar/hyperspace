@@ -56,6 +56,12 @@ pub struct OutputConfig {
     pub post: Vec<String>,
     /// Overlay image path (PNG with alpha, composited on top)
     pub overlay: Option<String>,
+    /// Video overlay path (MP4/GIF, loops continuously, toggled by key/CV)
+    pub video_overlay: Option<String>,
+    /// Key to toggle video overlay visibility (e.g. "t")
+    pub video_overlay_key: Option<String>,
+    /// CV channel to gate video overlay (high = visible)
+    pub video_overlay_cv: Option<usize>,
 }
 
 /// Display layout mode.
@@ -99,6 +105,10 @@ pub struct Viewport {
     pub post: Vec<String>,
     /// Overlay image path (PNG with alpha)
     pub overlay: Option<String>,
+    /// Video overlay config
+    pub video_overlay: Option<String>,
+    pub video_overlay_key: Option<String>,
+    pub video_overlay_cv: Option<usize>,
     /// Normalized rect within the framebuffer: (x, y, w, h) in 0..1
     pub rect: [f32; 4],
 }
@@ -137,6 +147,9 @@ impl SceneConfig {
                 symmetric: center.symmetric,
                 post: center.post.clone(),
                 overlay: center.overlay.clone(),
+                video_overlay: center.video_overlay.clone(),
+                video_overlay_key: center.video_overlay_key.clone(),
+                video_overlay_cv: center.video_overlay_cv,
                 rect,
             });
         }
@@ -149,6 +162,9 @@ impl SceneConfig {
                 symmetric: sides.symmetric,
                 post: sides.post.clone(),
                 overlay: sides.overlay.clone(),
+                video_overlay: sides.video_overlay.clone(),
+                video_overlay_key: sides.video_overlay_key.clone(),
+                video_overlay_cv: sides.video_overlay_cv,
                 rect,
             });
         }
@@ -175,6 +191,9 @@ impl SceneConfig {
                     symmetric: output.symmetric,
                     post: output.post.clone(),
                     overlay: output.overlay.clone(),
+                    video_overlay: output.video_overlay.clone(),
+                    video_overlay_key: output.video_overlay_key.clone(),
+                    video_overlay_cv: output.video_overlay_cv,
                     rect: [
                         col as f32 * cell_w,
                         row as f32 * cell_h,
@@ -196,6 +215,9 @@ impl SceneConfig {
                     symmetric: output.symmetric,
                     post: output.post.clone(),
                     overlay: output.overlay.clone(),
+                    video_overlay: output.video_overlay.clone(),
+                    video_overlay_key: output.video_overlay_key.clone(),
+                    video_overlay_cv: output.video_overlay_cv,
                     rect: [
                         col as f32 * cell_w,
                         row as f32 * cell_h,

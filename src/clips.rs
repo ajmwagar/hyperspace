@@ -100,6 +100,9 @@ impl ClipBoard {
                     symmetric: false,
                     post: clip.post.clone(),
                     overlay: None,
+                    video_overlay: None,
+                    video_overlay_key: None,
+                    video_overlay_cv: None,
                     rect: [0.0, 0.0, 1.0, 1.0], // full screen
                 }]
             }
@@ -110,6 +113,9 @@ impl ClipBoard {
                     symmetric: false,
                     post: clip.post.clone(),
                     overlay: None,
+                    video_overlay: None,
+                    video_overlay_key: None,
+                    video_overlay_cv: None,
                     rect: [0.0, 0.0, 1.0, 1.0], // full screen for clips
                 }]
             }

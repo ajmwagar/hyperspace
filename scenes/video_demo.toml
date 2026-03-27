@@ -1,0 +1,9 @@
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
+[center]
+shader = "shaders/gforce.wgsl"
+video_overlay = "assets/out.mp4"
+video_overlay_key = "t"         # press T to toggle
+# video_overlay_cv = 3          # or gate via CV channel 3
