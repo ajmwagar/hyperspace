@@ -243,8 +243,8 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("scenes/default.toml"));
 
     let layout_mode = match std::env::args().nth(2).as_deref() {
-        Some("9") => LayoutMode::NineOutput,
-        _ => LayoutMode::ThreeOutput,
+        Some(s) => LayoutMode::parse(s).unwrap_or(LayoutMode::ThreeOutput),
+        None => LayoutMode::ThreeOutput,
     };
 
     log::info!("hyperspace starting");

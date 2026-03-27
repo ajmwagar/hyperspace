@@ -31,8 +31,30 @@ pub struct OutputConfig {
 pub enum LayoutMode {
     /// Center + Sides (3 screens, 2 feeds)
     ThreeOutput,
-    /// 3×3 grid of independent viewports
-    NineOutput,
+    /// Configurable grid of independent viewports (cols × rows)
+    Grid { cols: u32, rows: u32 },
+}
+
+impl LayoutMode {
+    /// Parse layout from CLI arg: "9" (legacy 3x3), "3x4", "4x3", etc.
+    pub fn parse(s: &str) -> Option<Self> {
+        if let Some((c, r)) = s.split_once('x') {
+            let cols = c.trim().parse().ok()?;
+            let rows = r.trim().parse().ok()?;
+            Some(Self::Grid { cols, rows })
+        } else {
+            // Legacy: single number = NxN or known alias
+            let n: u32 = s.parse().ok()?;
+            match n {
+                9 => Some(Self::Grid { cols: 3, rows: 3 }),
+                12 => Some(Self::Grid { cols: 4, rows: 3 }),
+                _ => {
+                    let side = (n as f32).sqrt().ceil() as u32;
+                    Some(Self::Grid { cols: side, rows: side })
+                }
+            }
+        }
+    }
 }
 
 /// A resolved output viewport.
@@ -60,7 +82,7 @@ impl SceneConfig {
     pub fn resolve_viewports(&self, mode: LayoutMode) -> Vec<Viewport> {
         match mode {
             LayoutMode::ThreeOutput => self.resolve_three_output(),
-            LayoutMode::NineOutput => self.resolve_nine_output(),
+            LayoutMode::Grid { cols, rows } => self.resolve_grid(cols, rows),
         }
     }
 
@@ -88,17 +110,17 @@ impl SceneConfig {
         viewports
     }
 
-    fn resolve_nine_output(&self) -> Vec<Viewport> {
+    fn resolve_grid(&self, cols: u32, rows: u32) -> Vec<Viewport> {
         let mut viewports = Vec::new();
-        let cell_w = 1.0 / 3.0;
-        let cell_h = 1.0 / 3.0;
+        let cell_w = 1.0 / cols as f32;
+        let cell_h = 1.0 / rows as f32;
+        let total = cols * rows;
 
-        // Use numbered grid positions or named outputs
-        let grid_names: Vec<String> = (0..9).map(|i| format!("grid_{}", i)).collect();
+        let grid_names: Vec<String> = (0..total).map(|i| format!("grid_{}", i)).collect();
 
         for (idx, name) in grid_names.iter().enumerate() {
-            let col = idx % 3;
-            let row = idx / 3;
+            let col = idx as u32 % cols;
+            let row = idx as u32 / cols;
 
             if let Some(output) = self.outputs.get(name) {
                 viewports.push(Viewport {
@@ -115,11 +137,11 @@ impl SceneConfig {
             }
         }
 
-        // Also support named outputs (center, sides, etc.) falling back to first cells
+        // Fallback: named outputs fill cells left-to-right
         if viewports.is_empty() {
             for (idx, (name, output)) in self.outputs.iter().enumerate() {
-                let col = idx % 3;
-                let row = idx / 3;
+                let col = idx as u32 % cols;
+                let row = idx as u32 / cols;
                 viewports.push(Viewport {
                     name: name.clone(),
                     shader_path: output.shader.clone(),
@@ -206,7 +228,7 @@ shader = "shaders/test.wgsl"
     #[test]
     fn nine_output_fallback_to_named() {
         let config = SceneConfig::from_str(DEFAULT_SCENE).unwrap();
-        let vps = config.resolve_viewports(LayoutMode::NineOutput);
+        let vps = config.resolve_viewports(LayoutMode::Grid { cols: 3, rows: 3 });
 
         assert_eq!(vps.len(), 2);
         for vp in &vps {
@@ -228,7 +250,7 @@ shader = "shaders/b.wgsl"
 shader = "shaders/c.wgsl"
 "#;
         let config = SceneConfig::from_str(toml).unwrap();
-        let vps = config.resolve_viewports(LayoutMode::NineOutput);
+        let vps = config.resolve_viewports(LayoutMode::Grid { cols: 3, rows: 3 });
 
         assert_eq!(vps.len(), 3);
 

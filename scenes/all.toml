@@ -1,6 +1,6 @@
-# All shaders — 3x3 grid, one per cell.
+# All shaders — 4x3 grid (4 columns, 3 rows).
 # Keep this up to date as new shaders are added.
-# Run with: cargo run -- scenes/all.toml 9
+# Run with: cargo run -- scenes/all.toml 4x3
 
 [audio]
 device = "Scarlett"
@@ -32,3 +32,12 @@ shader = "shaders/cyberpunk.wgsl"
 
 [grid_8]
 shader = "shaders/lava_lamp.wgsl"
+
+[grid_9]
+shader = "shaders/oscilloscope.wgsl"
+
+[grid_10]
+shader = "shaders/cellular.wgsl"
+
+[grid_11]
+shader = "shaders/hyperdrive.wgsl"
