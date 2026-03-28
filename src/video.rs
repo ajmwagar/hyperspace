@@ -66,7 +66,7 @@ impl VideoOverlay {
         let output = Command::new("ffmpeg")
             .args([
                 "-i", path,
-                "-vf", &format!("scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},format=rgba", out_w, out_h, out_w, out_h),
+                "-vf", &format!("scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},vflip,format=rgba", out_w, out_h, out_w, out_h),
                 "-f", "rawvideo",
                 "-pix_fmt", "rgba",
                 "-v", "quiet",

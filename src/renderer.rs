@@ -770,11 +770,10 @@ impl Renderer {
                 frame_a.rgba.clone()
             };
 
-            // Upload to the feedback texture (flip for correct orientation)
+            // Upload to the feedback texture (already vflipped by ffmpeg)
             let target_idx = fb.result_idx;
             let w = current_video.width;
             let h = current_video.height;
-            let flipped_pixels = flip_image_y(&pixels, w, h);
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &fb.textures[target_idx],
@@ -782,7 +781,7 @@ impl Renderer {
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                &flipped_pixels,
+                &pixels,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(4 * w),
@@ -802,10 +801,9 @@ impl Renderer {
                 }
                 let frame_idx = vid.data.frame_at(time);
                 let frame = &vid.data.frames[frame_idx];
-                let flipped = flip_image_y(&frame.rgba, vid.data.width, vid.data.height);
                 self.queue.write_texture(
                     vid.texture.as_image_copy(),
-                    &flipped,
+                    &frame.rgba,
                     wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(4 * vid.data.width),
