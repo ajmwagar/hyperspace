@@ -414,15 +414,20 @@ impl ApplicationHandler for App {
                                 return;
                             }
                         }
-                        // Regular [ = previous device
-                        if self.audio_device_index > 0 {
-                            self.audio_device_index -= 1;
-                            if let Some(stream) = switch_to_device_info(
-                                &self.audio_devices[self.audio_device_index],
-                                &self.audio_shared,
-                                self.audio_channels,
-                            ) {
-                                self._audio_stream = Some(stream);
+                        // Regular [ = previous input device (skip output-only)
+                        let mut idx = self.audio_device_index;
+                        while idx > 0 {
+                            idx -= 1;
+                            if !self.audio_devices[idx].is_output {
+                                self.audio_device_index = idx;
+                                if let Some(stream) = switch_to_device_info(
+                                    &self.audio_devices[idx],
+                                    &self.audio_shared,
+                                    self.audio_channels,
+                                ) {
+                                    self._audio_stream = Some(stream);
+                                }
+                                break;
                             }
                         }
                         return;
@@ -449,15 +454,20 @@ impl ApplicationHandler for App {
                                 return;
                             }
                         }
-                        // Regular ] = next device
-                        if self.audio_device_index + 1 < self.audio_devices.len() {
-                            self.audio_device_index += 1;
-                            if let Some(stream) = switch_to_device_info(
-                                &self.audio_devices[self.audio_device_index],
-                                &self.audio_shared,
-                                self.audio_channels,
-                            ) {
-                                self._audio_stream = Some(stream);
+                        // Regular ] = next input device (skip output-only)
+                        let mut idx = self.audio_device_index;
+                        while idx + 1 < self.audio_devices.len() {
+                            idx += 1;
+                            if !self.audio_devices[idx].is_output {
+                                self.audio_device_index = idx;
+                                if let Some(stream) = switch_to_device_info(
+                                    &self.audio_devices[idx],
+                                    &self.audio_shared,
+                                    self.audio_channels,
+                                ) {
+                                    self._audio_stream = Some(stream);
+                                }
+                                break;
                             }
                         }
                         return;
