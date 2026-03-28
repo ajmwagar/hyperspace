@@ -333,7 +333,12 @@ impl ApplicationHandler for App {
                                 let marker = if i == self.audio_device_index { " ← active" } else { "" };
                                 log::info!("  [{}] {} ({}ch){}", i, name, ch, marker);
                             }
-                            log::info!("=== Press [ / ] to switch ===");
+                            if let Some(pair) = self.audio_channels {
+                                log::info!("  channels: L={} R={}", pair.left, pair.right);
+                            } else {
+                                log::info!("  channels: auto");
+                            }
+                            log::info!("=== [ ] = device, {{ }} = channels ===");
                             return;
                         }
                     }
@@ -350,6 +355,58 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
+                    // Channel pair cycling: shift+[ / shift+] (or { / })
+                    if event.physical_key == PhysicalKey::Code(KeyCode::BracketLeft)
+                        && event.repeat == false
+                    {
+                        // Check if shift is held — we handle shift+[ as channel cycle
+                        if let Some(text) = &event.text {
+                            if text.as_str() == "{" {
+                                // Cycle channel pair down by 2
+                                let current = self.audio_channels
+                                    .unwrap_or(audio::ChannelPair { left: 0, right: 1 });
+                                if current.left >= 2 {
+                                    let new_pair = audio::ChannelPair {
+                                        left: current.left - 2,
+                                        right: current.right - 2,
+                                    };
+                                    self.audio_channels = Some(new_pair);
+                                    log::info!("channel pair: L={} R={}", new_pair.left, new_pair.right);
+                                    if let Some(stream) = switch_to_device(
+                                        self.audio_device_index,
+                                        &self.audio_shared,
+                                        Some(new_pair),
+                                    ) {
+                                        self._audio_stream = Some(stream);
+                                    }
+                                }
+                                return;
+                            }
+                        }
+                    }
+                    if event.physical_key == PhysicalKey::Code(KeyCode::BracketRight) {
+                        if let Some(text) = &event.text {
+                            if text.as_str() == "}" {
+                                let current = self.audio_channels
+                                    .unwrap_or(audio::ChannelPair { left: 0, right: 1 });
+                                let new_pair = audio::ChannelPair {
+                                    left: current.left + 2,
+                                    right: current.right + 2,
+                                };
+                                self.audio_channels = Some(new_pair);
+                                log::info!("channel pair: L={} R={}", new_pair.left, new_pair.right);
+                                if let Some(stream) = switch_to_device(
+                                    self.audio_device_index,
+                                    &self.audio_shared,
+                                    Some(new_pair),
+                                ) {
+                                    self._audio_stream = Some(stream);
+                                }
+                                return;
+                            }
+                        }
+                    }
+
                     if event.physical_key == PhysicalKey::Code(KeyCode::BracketRight) {
                         let count = list_audio_devices().len();
                         if self.audio_device_index + 1 < count {
