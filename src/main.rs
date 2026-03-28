@@ -28,6 +28,9 @@ struct App {
     // Audio/CV shared state (created early, before window)
     audio_shared: audio::SharedAudioData,
     cv_shared: cv::SharedCvData,
+    // Audio device management
+    audio_device_index: usize,
+    audio_channels: Option<audio::ChannelPair>,
     // Visual sample board
     clip_board: clips::ClipBoard,
     // Global Lua controller
@@ -99,12 +102,17 @@ impl App {
             log::warn!("CV reader failed: {}", e);
         }
 
+        // Figure out which device index we're using
+        let audio_device_index = find_current_device_index(&audio_config);
+
         Ok(Self {
             scene_path,
             layout_mode,
             state: None,
             audio_shared,
             cv_shared,
+            audio_device_index,
+            audio_channels: channels,
             clip_board,
             controller,
             control_state,
@@ -149,6 +157,71 @@ fn start_audio(
     };
 
     audio::start_capture_device(shared.clone(), device, channels)
+}
+
+fn list_audio_devices() -> Vec<(String, usize)> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let host = cpal::default_host();
+    let mut devices = Vec::new();
+    if let Ok(iter) = host.input_devices() {
+        for d in iter {
+            let name = d.name().unwrap_or_else(|_| "unknown".into());
+            let channels = d.default_input_config()
+                .map(|c| c.channels() as usize)
+                .unwrap_or(0);
+            devices.push((name, channels));
+        }
+    }
+    devices
+}
+
+fn find_current_device_index(config: &scene::AudioConfig) -> usize {
+    if let Some(ref name_filter) = config.device {
+        let devices = list_audio_devices();
+        for (i, (name, _)) in devices.iter().enumerate() {
+            if name.to_lowercase().contains(&name_filter.to_lowercase()) {
+                return i;
+            }
+        }
+    }
+    0
+}
+
+fn switch_to_device(
+    index: usize,
+    shared: &audio::SharedAudioData,
+    channels: Option<audio::ChannelPair>,
+) -> Option<cpal::Stream> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let host = cpal::default_host();
+    let devices: Vec<_> = match host.input_devices() {
+        Ok(iter) => iter.collect(),
+        Err(_) => return None,
+    };
+    if index >= devices.len() {
+        return None;
+    }
+    let device = &devices[index];
+    let name = device.name().unwrap_or_else(|_| "unknown".into());
+    let num_ch = device.default_input_config()
+        .map(|c| c.channels() as usize)
+        .unwrap_or(0);
+    let pair = channels.unwrap_or_else(|| audio::ChannelPair::default_for(num_ch));
+    log::info!("switching audio to: [{}] {} ({}ch, using L={} R={})",
+        index, name, num_ch, pair.left, pair.right);
+
+    // Need to take ownership — collect devices into a vec, then take by index
+    drop(devices);
+    let devices: Vec<_> = host.input_devices().ok()?.collect();
+    let device = devices.into_iter().nth(index)?;
+
+    match audio::start_capture_device(shared.clone(), device, Some(pair)) {
+        Ok(stream) => Some(stream),
+        Err(e) => {
+            log::error!("failed to start audio on device: {}", e);
+            None
+        }
+    }
 }
 
 impl ApplicationHandler for App {
@@ -248,8 +321,50 @@ impl ApplicationHandler for App {
                         PhysicalKey::Code(KeyCode::KeyT) => Some("t"),
                         PhysicalKey::Code(KeyCode::KeyG) => Some("g"),
                         PhysicalKey::Code(KeyCode::KeyB) => Some("b"),
+                        PhysicalKey::Code(KeyCode::KeyI) => Some("i"),
                         _ => None,
                     };
+                    // Audio device management: i = list, [ = prev, ] = next
+                    if let Some(key) = key_str {
+                        if key == "i" {
+                            let devices = list_audio_devices();
+                            log::info!("=== Audio Input Devices ===");
+                            for (i, (name, ch)) in devices.iter().enumerate() {
+                                let marker = if i == self.audio_device_index { " ← active" } else { "" };
+                                log::info!("  [{}] {} ({}ch){}", i, name, ch, marker);
+                            }
+                            log::info!("=== Press [ / ] to switch ===");
+                            return;
+                        }
+                    }
+                    if event.physical_key == PhysicalKey::Code(KeyCode::BracketLeft)
+                        && self.audio_device_index > 0
+                    {
+                        self.audio_device_index -= 1;
+                        if let Some(stream) = switch_to_device(
+                            self.audio_device_index,
+                            &self.audio_shared,
+                            self.audio_channels,
+                        ) {
+                            self._audio_stream = Some(stream);
+                        }
+                        return;
+                    }
+                    if event.physical_key == PhysicalKey::Code(KeyCode::BracketRight) {
+                        let count = list_audio_devices().len();
+                        if self.audio_device_index + 1 < count {
+                            self.audio_device_index += 1;
+                            if let Some(stream) = switch_to_device(
+                                self.audio_device_index,
+                                &self.audio_shared,
+                                self.audio_channels,
+                            ) {
+                                self._audio_stream = Some(stream);
+                            }
+                        }
+                        return;
+                    }
+
                     if let Some(key) = key_str {
                         // Pass to Lua controller first
                         self.controller.on_key(key);
