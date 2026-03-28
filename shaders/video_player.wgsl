@@ -56,9 +56,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let zoom = 1.0 - u.beat * 0.02;
     uv = (uv - 0.5) * zoom + 0.5;
 
-    // Sample video frame (flip Y — CPU-uploaded texture has opposite Y convention)
-    let sample_uv = vec2<f32>(uv.x, 1.0 - uv.y);
-    var col = textureSample(prev_frame, prev_sampler, sample_uv).rgb;
+    // Sample video frame
+    var col = textureSample(prev_frame, prev_sampler, uv).rgb;
 
     // Audio-reactive brightness
     col *= 0.8 + u.amplitude * 0.4;
