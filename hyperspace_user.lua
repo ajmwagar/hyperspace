@@ -57,8 +57,18 @@ loaded_scene = first.scene
 -- Handlers
 -- ============================================================
 
+local last_log = 0
+
 function on_tick(dt)
     stage_timer = stage_timer + dt
+    -- Log progress every 30 seconds
+    if math.floor(stage_timer) >= last_log + 30 then
+        last_log = math.floor(stage_timer)
+        local entry = playlist[current_idx]
+        local remaining = entry.duration - stage_timer
+        log_info(string.format("playlist: %ds / %ds remaining (stage %d/%d)",
+            math.floor(stage_timer), entry.duration, current_idx, #playlist))
+    end
     local entry = playlist[current_idx]
     if stage_timer >= entry.duration then
         advance()
