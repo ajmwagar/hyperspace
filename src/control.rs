@@ -165,6 +165,10 @@ impl Controller {
         lua.push_str("function on_beat()\n");
         lua.push_str("end\n\n");
 
+        // on_tick: default no-op (called every frame with dt)
+        lua.push_str("function on_tick(dt)\n");
+        lua.push_str("end\n\n");
+
         // get_now_playing: returns current state (set via set_now_playing API)
         lua.push_str("function get_now_playing()\n");
         lua.push_str("  return nil, nil\n");
@@ -196,6 +200,15 @@ impl Controller {
         if let Ok(f) = self.lua.globals().get::<LuaFunction>("on_beat") {
             if let Err(e) = f.call::<()>(()) {
                 log::warn!("on_beat error: {}", e);
+            }
+        }
+    }
+
+    /// Call on_tick(dt) in Lua — called every frame for timer-based logic.
+    pub fn on_tick(&self, dt: f32) {
+        if let Ok(f) = self.lua.globals().get::<LuaFunction>("on_tick") {
+            if let Err(e) = f.call::<()>(dt) {
+                log::warn!("on_tick error: {}", e);
             }
         }
     }

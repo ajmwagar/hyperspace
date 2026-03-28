@@ -1,0 +1,15 @@
+# All Series — long playlist listening mode.
+# Cycles through shaders, video sequences, and effects automatically.
+# Each stage runs for a few minutes, then crossfades to the next.
+# Video sequences complete their full loop before advancing.
+# Post-processing effects rotate within each stage.
+#
+# Uses a custom Lua controller for the playlist logic.
+
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
+# Start with G-Force — the Lua controller takes over from here
+[center]
+shader = "shaders/gforce.wgsl"

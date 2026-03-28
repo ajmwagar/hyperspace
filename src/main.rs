@@ -576,6 +576,7 @@ impl ApplicationHandler for App {
                 if audio.beat > 0.7 {
                     self.controller.on_beat();
                 }
+                self.controller.on_tick(dt);
 
                 let elapsed = state.start_time.elapsed().as_secs_f32();
                 state.renderer.update_video_sequences(elapsed);

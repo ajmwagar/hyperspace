@@ -1,0 +1,17 @@
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
+[center]
+shader = "shaders/video_player.wgsl"
+video_speed = 0.3
+video_sources = [
+    "samples/br_open.gif",
+    "samples/br_overhead.gif",
+    "samples/br_flying_car.gif",
+    "samples/br_pyramid.gif",
+    "samples/br_smoking.gif",
+    "samples/br_chopsticks.gif",
+    "samples/br_nice.gif",
+]
+post = ["shaders/post/flow_drift.wgsl", "shaders/post/colormap_fire.wgsl"]
