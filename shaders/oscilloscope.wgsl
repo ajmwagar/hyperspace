@@ -57,7 +57,7 @@ fn get_waveform_r(idx: u32) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let uv = in.uv;
+    let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
 
     // Dark scope background
     var col = vec3<f32>(0.008, 0.015, 0.008);
