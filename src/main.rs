@@ -690,9 +690,18 @@ fn create_now_playing_overlay(renderer: &renderer::Renderer, pixels: &[u8]) -> N
         view_formats: &[],
     });
 
+    // Flip Y for correct orientation when blitted
+    let stride = (w * 4) as usize;
+    let mut flipped = vec![0u8; pixels.len()];
+    for row in 0..h as usize {
+        let src = row * stride;
+        let dst = (h as usize - 1 - row) * stride;
+        flipped[dst..dst + stride].copy_from_slice(&pixels[src..src + stride]);
+    }
+
     renderer.queue.write_texture(
         texture.as_image_copy(),
-        pixels,
+        &flipped,
         wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * w), rows_per_image: Some(h) },
         wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
     );

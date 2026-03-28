@@ -92,9 +92,7 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
     );
     var out: VertexOutput;
     out.position = vec4<f32>(pos[idx], 0.0, 1.0);
-    var uv = pos[idx] * 0.5 + 0.5;
-    uv.y = 1.0 - uv.y;  // flip Y: texture Y=0 is top, clip Y=-1 is bottom
-    out.uv = uv;
+    out.uv = pos[idx] * 0.5 + 0.5;
     return out;
 }
 
@@ -657,6 +655,7 @@ impl Renderer {
     fn load_overlay(&self, path: &str) -> Result<OverlayState> {
         let img = image::open(path)?.to_rgba8();
         let (w, h) = img.dimensions();
+        let flipped = flip_image_y(&img, w, h);
 
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some(path),
@@ -671,7 +670,7 @@ impl Renderer {
 
         self.queue.write_texture(
             texture.as_image_copy(),
-            &img,
+            &flipped,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * w),
@@ -771,10 +770,11 @@ impl Renderer {
                 frame_a.rgba.clone()
             };
 
-            // Upload to the feedback texture that will be read as prev_frame
+            // Upload to the feedback texture (flipped for correct orientation)
             let target_idx = fb.result_idx;
             let w = current_video.width;
             let h = current_video.height;
+            let flipped_pixels = flip_image_y(&pixels, w, h);
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &fb.textures[target_idx],
@@ -782,7 +782,7 @@ impl Renderer {
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                &pixels,
+                &flipped_pixels,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(4 * w),
@@ -802,9 +802,10 @@ impl Renderer {
                 }
                 let frame_idx = vid.data.frame_at(time);
                 let frame = &vid.data.frames[frame_idx];
+                let flipped = flip_image_y(&frame.rgba, vid.data.width, vid.data.height);
                 self.queue.write_texture(
                     vid.texture.as_image_copy(),
-                    &frame.rgba,
+                    &flipped,
                     wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(4 * vid.data.width),
@@ -1131,6 +1132,20 @@ impl Renderer {
             self.surface.configure(&self.device, &self.surface_config);
         }
     }
+}
+
+/// Flip RGBA image data vertically (top↔bottom).
+/// CPU-uploaded textures need this because wgpu texture Y=0 is top
+/// but the blit shader maps clip Y=-1 (bottom) to UV 0.
+fn flip_image_y(data: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let stride = (width * 4) as usize;
+    let mut flipped = vec![0u8; data.len()];
+    for row in 0..height as usize {
+        let src = row * stride;
+        let dst = (height as usize - 1 - row) * stride;
+        flipped[dst..dst + stride].copy_from_slice(&data[src..src + stride]);
+    }
+    flipped
 }
 
 /// Blend two RGBA frames by crossfade amount (0.0 = a, 1.0 = b).
