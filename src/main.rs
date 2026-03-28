@@ -161,8 +161,15 @@ fn start_audio(
 
 fn list_audio_devices() -> Vec<(String, usize)> {
     use cpal::traits::{DeviceTrait, HostTrait};
-    let host = cpal::default_host();
+
+    // Try all available hosts and collect devices from each
     let mut devices = Vec::new();
+    let available = cpal::available_hosts();
+    log::info!("available audio hosts: {:?}", available);
+
+    let host = cpal::default_host();
+    log::info!("using host: {:?}", host.id());
+
     if let Ok(iter) = host.input_devices() {
         for d in iter {
             let name = d.name().unwrap_or_else(|_| "unknown".into());
