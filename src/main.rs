@@ -377,8 +377,15 @@ impl ApplicationHandler for App {
                         log::info!("=== Audio Devices ===");
                         for (i, d) in self.audio_devices.iter().enumerate() {
                             let marker = if i == self.audio_device_index { " ← active" } else { "" };
+                            let hint = if d.is_output {
+                                " (output — use BlackHole or device loopback to capture)"
+                            } else if d.channels >= 6 {
+                                " (try channels 4,5 for loopback)"
+                            } else {
+                                ""
+                            };
                             let kind = if d.is_output { "OUT" } else { "IN " };
-                            log::info!("  [{}] {} {} ({}ch){}", i, kind, d.name, d.channels, marker);
+                            log::info!("  [{}] {} {} ({}ch){}{}", i, kind, d.name, d.channels, marker, hint);
                         }
                         if let Some(pair) = self.audio_channels {
                             log::info!("  channels: L={} R={}", pair.left, pair.right);
