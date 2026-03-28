@@ -92,7 +92,9 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
     );
     var out: VertexOutput;
     out.position = vec4<f32>(pos[idx], 0.0, 1.0);
-    out.uv = pos[idx] * 0.5 + 0.5;
+    var uv = pos[idx] * 0.5 + 0.5;
+    uv.y = 1.0 - uv.y;  // flip Y: texture Y=0 is top, clip Y=-1 is bottom
+    out.uv = uv;
     return out;
 }
 
