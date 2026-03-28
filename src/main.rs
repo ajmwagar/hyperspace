@@ -26,7 +26,8 @@ struct AudioDeviceInfo {
     host_id: cpal::HostId,
     name: String,
     channels: usize,
-    index_in_host: usize, // index within that host's device list
+    index_in_host: usize,
+    is_output: bool, // true = output device (shown for reference, may support loopback)
 }
 
 struct App {
@@ -140,6 +141,7 @@ fn enumerate_all_devices() -> Vec<AudioDeviceInfo> {
             Err(_) => continue,
         };
 
+        // Collect input devices
         if let Ok(devices) = host.input_devices() {
             for (idx, device) in devices.enumerate() {
                 let name = device.name().unwrap_or_else(|_| "unknown".into());
@@ -147,15 +149,37 @@ fn enumerate_all_devices() -> Vec<AudioDeviceInfo> {
                     .default_input_config()
                     .map(|c| c.channels() as usize)
                     .unwrap_or(0);
-                // Skip zero-channel devices
-                if channels == 0 {
-                    continue;
-                }
+                if channels == 0 { continue; }
                 all_devices.push(AudioDeviceInfo {
                     host_id: *host_id,
                     name,
                     channels,
                     index_in_host: idx,
+                    is_output: false,
+                });
+            }
+        }
+
+        // Collect output devices too (some can be opened as input for loopback/monitor)
+        if let Ok(devices) = host.output_devices() {
+            for (idx, device) in devices.enumerate() {
+                let name = device.name().unwrap_or_else(|_| "unknown".into());
+                // Check if this output device also supports input capture
+                let input_channels = device
+                    .default_input_config()
+                    .map(|c| c.channels() as usize)
+                    .unwrap_or(0);
+                let output_channels = device
+                    .default_output_config()
+                    .map(|c| c.channels() as usize)
+                    .unwrap_or(0);
+                if output_channels == 0 { continue; }
+                all_devices.push(AudioDeviceInfo {
+                    host_id: *host_id,
+                    name,
+                    channels: if input_channels > 0 { input_channels } else { output_channels },
+                    index_in_host: idx,
+                    is_output: true,
                 });
             }
         }
@@ -188,7 +212,23 @@ fn switch_to_device_info(
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let host = cpal::host_from_id(info.host_id).ok()?;
-    let device = host.input_devices().ok()?.nth(info.index_in_host)?;
+
+    // For output devices, try to find matching input device by name
+    // (on macOS CoreAudio, devices appear in both input and output lists)
+    let device = if info.is_output {
+        // First try: find an input device with the same name
+        let input_match = host.input_devices().ok()?.find(|d| {
+            d.name().map(|n| n == info.name).unwrap_or(false)
+        });
+        if let Some(d) = input_match {
+            d
+        } else {
+            // Fallback: try opening the output device (won't work for capture usually)
+            host.output_devices().ok()?.nth(info.index_in_host)?
+        }
+    } else {
+        host.input_devices().ok()?.nth(info.index_in_host)?
+    };
 
     let pair = channels.unwrap_or_else(|| audio::ChannelPair::default_for(info.channels));
     log::info!(
@@ -334,10 +374,11 @@ impl ApplicationHandler for App {
                     // i = list audio devices
                     if let Some("i") = key_str {
                         self.audio_devices = enumerate_all_devices();
-                        log::info!("=== Audio Input Devices ===");
+                        log::info!("=== Audio Devices ===");
                         for (i, d) in self.audio_devices.iter().enumerate() {
                             let marker = if i == self.audio_device_index { " ← active" } else { "" };
-                            log::info!("  [{}] {} ({}ch, {:?}){}", i, d.name, d.channels, d.host_id, marker);
+                            let kind = if d.is_output { "OUT" } else { "IN " };
+                            log::info!("  [{}] {} {} ({}ch){}", i, kind, d.name, d.channels, marker);
                         }
                         if let Some(pair) = self.audio_channels {
                             log::info!("  channels: L={} R={}", pair.left, pair.right);
@@ -596,9 +637,10 @@ fn main() -> Result<()> {
     // --list-audio: print devices and exit
     if std::env::args().any(|a| a == "--list-audio") {
         let devices = enumerate_all_devices();
-        println!("Audio Input Devices:");
+        println!("Audio Devices:");
         for (i, d) in devices.iter().enumerate() {
-            println!("  [{}] {} ({}ch, host={:?})", i, d.name, d.channels, d.host_id);
+            let kind = if d.is_output { "OUT" } else { "IN " };
+            println!("  [{}] {} {} ({}ch, {:?})", i, kind, d.name, d.channels, d.host_id);
         }
         return Ok(());
     }
