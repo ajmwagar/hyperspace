@@ -20,15 +20,23 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
 
+/// An enumerated audio device with its host info.
+#[derive(Clone)]
+struct AudioDeviceInfo {
+    host_id: cpal::HostId,
+    name: String,
+    channels: usize,
+    index_in_host: usize, // index within that host's device list
+}
+
 struct App {
     scene_path: PathBuf,
     layout_mode: LayoutMode,
-    // Initialized after resume
     state: Option<AppState>,
-    // Audio/CV shared state (created early, before window)
     audio_shared: audio::SharedAudioData,
     cv_shared: cv::SharedCvData,
     // Audio device management
+    audio_devices: Vec<AudioDeviceInfo>,
     audio_device_index: usize,
     audio_channels: Option<audio::ChannelPair>,
     // Visual sample board
@@ -36,9 +44,7 @@ struct App {
     // Global Lua controller
     controller: control::Controller,
     control_state: control::SharedControlState,
-    // Text overlay for now playing
     text_renderer: text::TextRenderer,
-    // Keep audio stream alive
     _audio_stream: Option<cpal::Stream>,
 }
 
@@ -47,7 +53,6 @@ struct AppState {
     renderer: renderer::Renderer,
     start_time: Instant,
     last_frame: Instant,
-    /// Now playing overlay texture (rendered from text, uploaded on change)
     now_playing_texture: Option<NowPlayingOverlay>,
 }
 
@@ -61,7 +66,6 @@ impl App {
         let audio_shared = audio::new_shared();
         let cv_shared = cv::new_shared();
 
-        // Load scene config early to get audio settings + clips
         let scene_config = scene::SceneConfig::load(&scene_path).ok();
         let audio_config = scene_config
             .as_ref()
@@ -73,37 +77,34 @@ impl App {
             .unwrap_or_default();
         let clip_board = clips::ClipBoard::new(clip_configs);
 
-        // Create Lua controller from config
-        let default_config = scene::SceneConfig::from_str("").unwrap_or_default();
+        let default_config = scene::SceneConfig::default();
         let config_ref = scene_config.as_ref().unwrap_or(&default_config);
         let (controller, control_state) = control::Controller::new(config_ref)?;
         let text_renderer = text::TextRenderer::new(512, 512);
 
-        // Parse channel override from scene config
         let channels = audio_config
             .channels
             .as_deref()
             .and_then(audio::ChannelPair::parse);
 
-        // Start audio capture with device selection from scene config
-        let audio_stream = match start_audio(&audio_shared, &audio_config, channels) {
-            Ok(stream) => {
-                log::info!("audio capture started");
-                Some(stream)
-            }
-            Err(e) => {
-                log::warn!("audio capture failed, running without audio: {}", e);
-                None
-            }
+        // Enumerate all devices across all hosts
+        let audio_devices = enumerate_all_devices();
+        log::info!("found {} audio input devices across all hosts", audio_devices.len());
+
+        // Find the matching device
+        let audio_device_index = find_device_index(&audio_devices, &audio_config);
+
+        // Start audio capture
+        let audio_stream = if !audio_devices.is_empty() {
+            switch_to_device_info(&audio_devices[audio_device_index], &audio_shared, channels)
+        } else {
+            log::warn!("no audio input devices found");
+            None
         };
 
-        // Start CV reader
         if let Err(e) = cv::start_cv_reader(cv_shared.clone()) {
             log::warn!("CV reader failed: {}", e);
         }
-
-        // Figure out which device index we're using
-        let audio_device_index = find_current_device_index(&audio_config);
 
         Ok(Self {
             scene_path,
@@ -111,6 +112,7 @@ impl App {
             state: None,
             audio_shared,
             cv_shared,
+            audio_devices,
             audio_device_index,
             audio_channels: channels,
             clip_board,
@@ -122,6 +124,87 @@ impl App {
     }
 }
 
+/// Enumerate input devices from ALL available audio hosts.
+/// On Linux this finds ALSA hardware devices that PulseAudio/PipeWire hide.
+fn enumerate_all_devices() -> Vec<AudioDeviceInfo> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let available = cpal::available_hosts();
+    log::info!("available audio hosts: {:?}", available);
+
+    let mut all_devices = Vec::new();
+
+    for host_id in &available {
+        let host = match cpal::host_from_id(*host_id) {
+            Ok(h) => h,
+            Err(_) => continue,
+        };
+
+        if let Ok(devices) = host.input_devices() {
+            for (idx, device) in devices.enumerate() {
+                let name = device.name().unwrap_or_else(|_| "unknown".into());
+                let channels = device
+                    .default_input_config()
+                    .map(|c| c.channels() as usize)
+                    .unwrap_or(0);
+                // Skip zero-channel devices
+                if channels == 0 {
+                    continue;
+                }
+                all_devices.push(AudioDeviceInfo {
+                    host_id: *host_id,
+                    name,
+                    channels,
+                    index_in_host: idx,
+                });
+            }
+        }
+    }
+
+    // Deduplicate by name (same device might appear in multiple hosts)
+    all_devices.sort_by(|a, b| a.name.cmp(&b.name));
+    all_devices.dedup_by(|a, b| a.name == b.name);
+
+    all_devices
+}
+
+fn find_device_index(devices: &[AudioDeviceInfo], config: &scene::AudioConfig) -> usize {
+    if let Some(ref name_filter) = config.device {
+        let filter_lower = name_filter.to_lowercase();
+        for (i, d) in devices.iter().enumerate() {
+            if d.name.to_lowercase().contains(&filter_lower) {
+                return i;
+            }
+        }
+    }
+    0
+}
+
+fn switch_to_device_info(
+    info: &AudioDeviceInfo,
+    shared: &audio::SharedAudioData,
+    channels: Option<audio::ChannelPair>,
+) -> Option<cpal::Stream> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let host = cpal::host_from_id(info.host_id).ok()?;
+    let device = host.input_devices().ok()?.nth(info.index_in_host)?;
+
+    let pair = channels.unwrap_or_else(|| audio::ChannelPair::default_for(info.channels));
+    log::info!(
+        "audio: [{}] {} ({}ch, L={} R={}, host={:?})",
+        info.index_in_host, info.name, info.channels, pair.left, pair.right, info.host_id
+    );
+
+    match audio::start_capture_device(shared.clone(), device, Some(pair)) {
+        Ok(stream) => Some(stream),
+        Err(e) => {
+            log::error!("failed to start audio on '{}': {}", info.name, e);
+            None
+        }
+    }
+}
+
 fn start_audio(
     shared: &audio::SharedAudioData,
     config: &scene::AudioConfig,
@@ -130,9 +213,7 @@ fn start_audio(
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let host = cpal::default_host();
-
     let device = if let Some(ref name_filter) = config.device {
-        // Find device matching the name substring
         let devices: Vec<_> = host.input_devices()?.collect();
         let found = devices.into_iter().find(|d| {
             d.name()
@@ -140,16 +221,10 @@ fn start_audio(
                 .unwrap_or(false)
         });
         match found {
-            Some(d) => {
-                log::info!("matched audio device '{}' for filter '{}'",
-                    d.name().unwrap_or_default(), name_filter);
-                d
-            }
-            None => {
-                log::warn!("no device matching '{}', falling back to default", name_filter);
-                host.default_input_device()
-                    .ok_or_else(|| anyhow::anyhow!("no audio input device"))?
-            }
+            Some(d) => d,
+            None => host
+                .default_input_device()
+                .ok_or_else(|| anyhow::anyhow!("no audio input device"))?,
         }
     } else {
         host.default_input_device()
@@ -157,78 +232,6 @@ fn start_audio(
     };
 
     audio::start_capture_device(shared.clone(), device, channels)
-}
-
-fn list_audio_devices() -> Vec<(String, usize)> {
-    use cpal::traits::{DeviceTrait, HostTrait};
-
-    // Try all available hosts and collect devices from each
-    let mut devices = Vec::new();
-    let available = cpal::available_hosts();
-    log::info!("available audio hosts: {:?}", available);
-
-    let host = cpal::default_host();
-    log::info!("using host: {:?}", host.id());
-
-    if let Ok(iter) = host.input_devices() {
-        for d in iter {
-            let name = d.name().unwrap_or_else(|_| "unknown".into());
-            let channels = d.default_input_config()
-                .map(|c| c.channels() as usize)
-                .unwrap_or(0);
-            devices.push((name, channels));
-        }
-    }
-    devices
-}
-
-fn find_current_device_index(config: &scene::AudioConfig) -> usize {
-    if let Some(ref name_filter) = config.device {
-        let devices = list_audio_devices();
-        for (i, (name, _)) in devices.iter().enumerate() {
-            if name.to_lowercase().contains(&name_filter.to_lowercase()) {
-                return i;
-            }
-        }
-    }
-    0
-}
-
-fn switch_to_device(
-    index: usize,
-    shared: &audio::SharedAudioData,
-    channels: Option<audio::ChannelPair>,
-) -> Option<cpal::Stream> {
-    use cpal::traits::{DeviceTrait, HostTrait};
-    let host = cpal::default_host();
-    let devices: Vec<_> = match host.input_devices() {
-        Ok(iter) => iter.collect(),
-        Err(_) => return None,
-    };
-    if index >= devices.len() {
-        return None;
-    }
-    let device = &devices[index];
-    let name = device.name().unwrap_or_else(|_| "unknown".into());
-    let num_ch = device.default_input_config()
-        .map(|c| c.channels() as usize)
-        .unwrap_or(0);
-    let pair = channels.unwrap_or_else(|| audio::ChannelPair::default_for(num_ch));
-    log::info!("switching audio to: [{}] {} ({}ch, using L={} R={})",
-        index, name, num_ch, pair.left, pair.right);
-
-    // Need to take ownership — collect devices into a vec, then take by index
-    drop(devices);
-    let devices: Vec<_> = host.input_devices().ok()?.collect();
-    let device = devices.into_iter().nth(index)?;
-
-    match audio::start_capture_device(shared.clone(), device, Some(pair)) {
-        Ok(stream) => Some(stream),
-        Err(e) => {
-            log::error!("failed to start audio on device: {}", e);
-            None
-        }
-    }
 }
 
 impl ApplicationHandler for App {
@@ -242,10 +245,8 @@ impl ApplicationHandler for App {
             .with_maximized(true);
 
         let window = Arc::new(event_loop.create_window(window_attrs).unwrap());
-
         let mut renderer = pollster::block_on(renderer::Renderer::new(window.clone())).unwrap();
 
-        // Load scene config
         match scene::SceneConfig::load(&self.scene_path) {
             Ok(config) => {
                 let viewports = config.resolve_viewports(self.layout_mode);
@@ -263,7 +264,6 @@ impl ApplicationHandler for App {
 
         window.request_redraw();
 
-        // Create now playing overlay if set in config
         let np_overlay = {
             let ctrl = self.control_state.lock().unwrap();
             if !ctrl.now_playing_artist.is_empty() || !ctrl.now_playing_title.is_empty() {
@@ -311,7 +311,6 @@ impl ApplicationHandler for App {
                 } else if event.physical_key == PhysicalKey::Code(KeyCode::Escape) {
                     event_loop.exit();
                 } else {
-                    // Try clip board first (letter keys for clips)
                     let key_str = match event.physical_key {
                         PhysicalKey::Code(KeyCode::KeyQ) => Some("q"),
                         PhysicalKey::Code(KeyCode::KeyW) => Some("w"),
@@ -331,45 +330,29 @@ impl ApplicationHandler for App {
                         PhysicalKey::Code(KeyCode::KeyI) => Some("i"),
                         _ => None,
                     };
-                    // Audio device management: i = list, [ = prev, ] = next
-                    if let Some(key) = key_str {
-                        if key == "i" {
-                            let devices = list_audio_devices();
-                            log::info!("=== Audio Input Devices ===");
-                            for (i, (name, ch)) in devices.iter().enumerate() {
-                                let marker = if i == self.audio_device_index { " ← active" } else { "" };
-                                log::info!("  [{}] {} ({}ch){}", i, name, ch, marker);
-                            }
-                            if let Some(pair) = self.audio_channels {
-                                log::info!("  channels: L={} R={}", pair.left, pair.right);
-                            } else {
-                                log::info!("  channels: auto");
-                            }
-                            log::info!("=== [ ] = device, {{ }} = channels ===");
-                            return;
+
+                    // i = list audio devices
+                    if let Some("i") = key_str {
+                        self.audio_devices = enumerate_all_devices();
+                        log::info!("=== Audio Input Devices ===");
+                        for (i, d) in self.audio_devices.iter().enumerate() {
+                            let marker = if i == self.audio_device_index { " ← active" } else { "" };
+                            log::info!("  [{}] {} ({}ch, {:?}){}", i, d.name, d.channels, d.host_id, marker);
                         }
-                    }
-                    if event.physical_key == PhysicalKey::Code(KeyCode::BracketLeft)
-                        && self.audio_device_index > 0
-                    {
-                        self.audio_device_index -= 1;
-                        if let Some(stream) = switch_to_device(
-                            self.audio_device_index,
-                            &self.audio_shared,
-                            self.audio_channels,
-                        ) {
-                            self._audio_stream = Some(stream);
+                        if let Some(pair) = self.audio_channels {
+                            log::info!("  channels: L={} R={}", pair.left, pair.right);
+                        } else {
+                            log::info!("  channels: auto");
                         }
+                        log::info!("=== [ ] = device, {{ }} = channels ===");
                         return;
                     }
-                    // Channel pair cycling: shift+[ / shift+] (or { / })
-                    if event.physical_key == PhysicalKey::Code(KeyCode::BracketLeft)
-                        && event.repeat == false
-                    {
-                        // Check if shift is held — we handle shift+[ as channel cycle
+
+                    // [ ] = cycle device
+                    if event.physical_key == PhysicalKey::Code(KeyCode::BracketLeft) {
+                        // Check for shift (channel cycling)
                         if let Some(text) = &event.text {
                             if text.as_str() == "{" {
-                                // Cycle channel pair down by 2
                                 let current = self.audio_channels
                                     .unwrap_or(audio::ChannelPair { left: 0, right: 1 });
                                 if current.left >= 2 {
@@ -379,8 +362,8 @@ impl ApplicationHandler for App {
                                     };
                                     self.audio_channels = Some(new_pair);
                                     log::info!("channel pair: L={} R={}", new_pair.left, new_pair.right);
-                                    if let Some(stream) = switch_to_device(
-                                        self.audio_device_index,
+                                    if let Some(stream) = switch_to_device_info(
+                                        &self.audio_devices[self.audio_device_index],
                                         &self.audio_shared,
                                         Some(new_pair),
                                     ) {
@@ -390,8 +373,21 @@ impl ApplicationHandler for App {
                                 return;
                             }
                         }
+                        // Regular [ = previous device
+                        if self.audio_device_index > 0 {
+                            self.audio_device_index -= 1;
+                            if let Some(stream) = switch_to_device_info(
+                                &self.audio_devices[self.audio_device_index],
+                                &self.audio_shared,
+                                self.audio_channels,
+                            ) {
+                                self._audio_stream = Some(stream);
+                            }
+                        }
+                        return;
                     }
                     if event.physical_key == PhysicalKey::Code(KeyCode::BracketRight) {
+                        // Check for shift (channel cycling)
                         if let Some(text) = &event.text {
                             if text.as_str() == "}" {
                                 let current = self.audio_channels
@@ -402,8 +398,8 @@ impl ApplicationHandler for App {
                                 };
                                 self.audio_channels = Some(new_pair);
                                 log::info!("channel pair: L={} R={}", new_pair.left, new_pair.right);
-                                if let Some(stream) = switch_to_device(
-                                    self.audio_device_index,
+                                if let Some(stream) = switch_to_device_info(
+                                    &self.audio_devices[self.audio_device_index],
                                     &self.audio_shared,
                                     Some(new_pair),
                                 ) {
@@ -412,14 +408,11 @@ impl ApplicationHandler for App {
                                 return;
                             }
                         }
-                    }
-
-                    if event.physical_key == PhysicalKey::Code(KeyCode::BracketRight) {
-                        let count = list_audio_devices().len();
-                        if self.audio_device_index + 1 < count {
+                        // Regular ] = next device
+                        if self.audio_device_index + 1 < self.audio_devices.len() {
                             self.audio_device_index += 1;
-                            if let Some(stream) = switch_to_device(
-                                self.audio_device_index,
+                            if let Some(stream) = switch_to_device_info(
+                                &self.audio_devices[self.audio_device_index],
                                 &self.audio_shared,
                                 self.audio_channels,
                             ) {
@@ -427,17 +420,6 @@ impl ApplicationHandler for App {
                             }
                         }
                         return;
-                    }
-
-                    if let Some(key) = key_str {
-                        // Pass to Lua controller first
-                        self.controller.on_key(key);
-                        // Then video overlay toggle
-                        state.renderer.toggle_video_by_key(key);
-                        // Then clip board
-                        if self.clip_board.on_key(key, &mut state.renderer, self.layout_mode) {
-                            return;
-                        }
                     }
 
                     // Scene switching: number keys 1-9, 0 load scene files
@@ -455,7 +437,7 @@ impl ApplicationHandler for App {
                         _ => None,
                     };
                     if let Some(idx) = scene_idx {
-                        if let Ok(mut entries) = std::fs::read_dir("scenes") {
+                        if let Ok(entries) = std::fs::read_dir("scenes") {
                             let mut scenes: Vec<_> = entries
                                 .filter_map(|e| e.ok())
                                 .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
@@ -480,6 +462,14 @@ impl ApplicationHandler for App {
                             }
                         }
                     }
+
+                    if let Some(key) = key_str {
+                        self.controller.on_key(key);
+                        state.renderer.toggle_video_by_key(key);
+                        if self.clip_board.on_key(key, &mut state.renderer, self.layout_mode) {
+                            return;
+                        }
+                    }
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -487,24 +477,18 @@ impl ApplicationHandler for App {
                 let dt = now.duration_since(state.last_frame).as_secs_f32();
                 state.last_frame = now;
 
-                // Gather audio data
                 let audio = self.audio_shared.lock().unwrap();
-
-                // Gather CV data
                 let cv = *self.cv_shared.lock().unwrap();
 
-                // Pass CV to Lua controller
                 for ch in 0..8 {
                     self.controller.on_cv(ch, cv[ch]);
                 }
 
-                // Check CV triggers for clip board and video overlays
                 if !self.clip_board.is_empty() {
                     self.clip_board.check_cv(&cv, &mut state.renderer, self.layout_mode);
                 }
                 state.renderer.gate_video_by_cv(&cv);
 
-                // Process controller actions (scene switches, now playing, etc.)
                 let ctrl = self.controller.drain();
                 if let Some(scene_path) = ctrl.pending_scene {
                     log::info!("[controller] switching scene: {}", scene_path);
@@ -522,7 +506,6 @@ impl ApplicationHandler for App {
                     state.renderer.toggle_video_by_key(key);
                 }
 
-                // Update now playing overlay if text changed
                 if ctrl.now_playing_changed {
                     let pixels = self.text_renderer.render_now_playing(
                         &ctrl.now_playing_artist,
@@ -532,18 +515,16 @@ impl ApplicationHandler for App {
                     log::info!("now playing: {} - {}", ctrl.now_playing_artist, ctrl.now_playing_title);
                 }
 
-                // Beat detection → notify controller
                 if audio.beat > 0.7 {
                     self.controller.on_beat();
                 }
 
-                // Upload current video frames
                 let elapsed = state.start_time.elapsed().as_secs_f32();
                 state.renderer.update_video_sequences(elapsed);
                 state.renderer.update_video_frames(elapsed);
 
                 let uniforms = Uniforms {
-                    time: state.start_time.elapsed().as_secs_f32(),
+                    time: elapsed,
                     delta_time: dt,
                     resolution: [
                         state.renderer.surface_config.width as f32,
@@ -585,7 +566,7 @@ impl ApplicationHandler for App {
                     &audio.waveform_r,
                 );
 
-                drop(audio); // release lock before render
+                drop(audio);
 
                 let np_bg = state.now_playing_texture.as_ref().map(|np| &np.bind_group);
                 if let Err(e) = state.renderer.render_with_overlay(np_bg) {
@@ -612,6 +593,16 @@ fn main() -> Result<()> {
         None => LayoutMode::ThreeOutput,
     };
 
+    // --list-audio: print devices and exit
+    if std::env::args().any(|a| a == "--list-audio") {
+        let devices = enumerate_all_devices();
+        println!("Audio Input Devices:");
+        for (i, d) in devices.iter().enumerate() {
+            println!("  [{}] {} ({}ch, host={:?})", i, d.name, d.channels, d.host_id);
+        }
+        return Ok(());
+    }
+
     log::info!("hyperspace starting");
     log::info!("scene: {}", scene_path.display());
     log::info!("layout: {:?}", layout_mode);
@@ -625,7 +616,6 @@ fn main() -> Result<()> {
 }
 
 fn create_now_playing_overlay(renderer: &renderer::Renderer, pixels: &[u8]) -> NowPlayingOverlay {
-    use wgpu::util::DeviceExt;
     let w = 512u32;
     let h = 512u32;
 
