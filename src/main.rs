@@ -80,7 +80,7 @@ impl App {
 
         let default_config = scene::SceneConfig::default();
         let config_ref = scene_config.as_ref().unwrap_or(&default_config);
-        let (controller, control_state) = control::Controller::new(config_ref)?;
+        let (controller, control_state) = control::Controller::new(config_ref, scene_path.to_str().unwrap_or(""))?;
         let text_renderer = text::TextRenderer::new(512, 512);
 
         let channels = audio_config

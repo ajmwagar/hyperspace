@@ -9,6 +9,11 @@
 --
 -- To use: just run with scenes/all_series.toml
 --   cargo run -- scenes/all_series.toml
+--
+-- Only activates playlist mode when the initial scene is all_series.toml.
+-- Other scenes run normally without interference.
+
+local PLAYLIST_MODE = false  -- set to true below if we detect all_series
 
 -- ============================================================
 -- PLAYLIST
@@ -29,6 +34,9 @@ local playlist = {
     -- Blade Runner (4 min — full loop through 7 clips)
     { scene = "scenes/bladerunner.toml",  duration = 240, desc = "Blade Runner reel" },
 
+    -- Neural Link
+    { scene = "scenes/neural_link.toml",  duration = 150, desc = "Neural Link" },
+
     -- G-Force again with different feel (playlist wraps)
     { scene = "scenes/gforce.toml",       duration = 150, desc = "G-Force (encore)" },
 }
@@ -46,12 +54,18 @@ local function advance()
     stage_timer = 0
 end
 
--- Load first stage on startup
-local first = playlist[1]
-log_info("playlist: starting — " .. #playlist .. " stages")
-log_info("playlist: [1/" .. #playlist .. "] " .. first.desc .. " (" .. first.duration .. "s)")
-set_scene(first.scene)
-loaded_scene = first.scene
+-- Detect playlist mode: check if SCENE_PATH global is set to all_series
+-- The engine sets this before loading the user script
+if SCENE_PATH and string.find(SCENE_PATH, "all_series") then
+    PLAYLIST_MODE = true
+    local first = playlist[1]
+    log_info("playlist: starting — " .. #playlist .. " stages")
+    log_info("playlist: [1/" .. #playlist .. "] " .. first.desc .. " (" .. first.duration .. "s)")
+    set_scene(first.scene)
+    loaded_scene = first.scene
+else
+    log_info("playlist mode disabled (not running all_series.toml)")
+end
 
 -- ============================================================
 -- Handlers
@@ -60,12 +74,11 @@ loaded_scene = first.scene
 local last_log = 0
 
 function on_tick(dt)
+    if not PLAYLIST_MODE then return end
     stage_timer = stage_timer + dt
-    -- Log progress every 30 seconds
     if math.floor(stage_timer) >= last_log + 30 then
         last_log = math.floor(stage_timer)
         local entry = playlist[current_idx]
-        local remaining = entry.duration - stage_timer
         log_info(string.format("playlist: %ds / %ds remaining (stage %d/%d)",
             math.floor(stage_timer), entry.duration, current_idx, #playlist))
     end
@@ -76,13 +89,14 @@ function on_tick(dt)
 end
 
 function on_key(key)
+    if not PLAYLIST_MODE then return end
     if key == "b" then
         advance()
     end
 end
 
 function on_cv(channel, value)
-    -- CV 1 rising edge: advance playlist
+    if not PLAYLIST_MODE then return end
     if channel == 1 then
         local was_high = _cv1_prev or false
         local is_high = value > 0.5

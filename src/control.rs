@@ -31,7 +31,7 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub fn new(config: &SceneConfig) -> Result<(Self, SharedControlState)> {
+    pub fn new(config: &SceneConfig, scene_path: &str) -> Result<(Self, SharedControlState)> {
         let lua = Lua::new();
         let shared: SharedControlState = Arc::new(Mutex::new(ControlState::default()));
 
@@ -46,6 +46,9 @@ impl Controller {
             }
             state.now_playing_changed = true;
         }
+
+        // Set scene path so user scripts can detect which scene is running
+        lua.globals().set("SCENE_PATH", scene_path.to_string()).map_err(lua_err)?;
 
         // Register Rust API functions into Lua globals
         Self::register_api(&lua, shared.clone())?;
