@@ -12,8 +12,8 @@ pub const FFT_SIZE: usize = 1024;
 const NOISE_FLOOR: f32 = 1e-5;
 
 // Per-band attack/release — bass sustains, highs snap
-const BASS_ATTACK: f32 = 0.4;
-const BASS_RELEASE: f32 = 0.06;   // slow decay — bass hangs in the air
+const BASS_ATTACK: f32 = 0.6;      // snappy rise — feel the transient
+const BASS_RELEASE: f32 = 0.15;    // fast enough to reset between kicks
 const MID_ATTACK: f32 = 0.5;
 const MID_RELEASE: f32 = 0.12;    // moderate decay
 const HIGH_ATTACK: f32 = 0.7;
