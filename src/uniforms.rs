@@ -25,7 +25,10 @@ pub struct Uniforms {
     pub mid_r: f32,
     pub high_l: f32,
     pub high_r: f32,
-    pub _pad1: [f32; 3], // pad to 16-byte alignment
+    // Extra analysis (packed into former padding)
+    pub onset: f32,     // spectral flux — fires on transients/note onsets
+    pub sub_bass: f32,  // 20-60Hz — sub rumble
+    pub presence: f32,  // 4-8kHz — vocal/cymbal shimmer
 }
 
 impl Uniforms {
@@ -54,7 +57,9 @@ impl Default for Uniforms {
             mid_r: 0.0,
             high_l: 0.0,
             high_r: 0.0,
-            _pad1: [0.0; 3],
+            onset: 0.0,
+            sub_bass: 0.0,
+            presence: 0.0,
         }
     }
 }
@@ -90,7 +95,9 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, mid_r), 104);
         assert_eq!(offset_of!(Uniforms, high_l), 108);
         assert_eq!(offset_of!(Uniforms, high_r), 112);
-        // _pad1 at 116..128
+        assert_eq!(offset_of!(Uniforms, onset), 116);
+        assert_eq!(offset_of!(Uniforms, sub_bass), 120);
+        assert_eq!(offset_of!(Uniforms, presence), 124);
     }
 
     #[test]

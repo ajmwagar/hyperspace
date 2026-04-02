@@ -604,6 +604,9 @@ impl ApplicationHandler for App {
                     mid_r: audio.right.mid,
                     high_l: audio.left.high,
                     high_r: audio.right.high,
+                    onset: audio.onset,
+                    sub_bass: audio.sub_bass,
+                    presence: audio.presence,
                     ..Default::default()
                 };
 
