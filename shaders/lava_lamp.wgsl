@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -82,7 +85,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         // Blob radius: large, soft — audio gently inflates
         let base_r = 0.08 + hash(id + 6.0) * 0.06;
-        let r = base_r + u.bass * 0.015;
+        let r = base_r + u.bass * 0.015 + u.sub_bass * 0.01;
 
         let d = length(p - bp);
         let influence = (r * r) / (d * d + 0.0005);
@@ -105,7 +108,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let bg = mix(vec3<f32>(0.04, 0.01, 0.02), vec3<f32>(0.1, 0.02, 0.04), uv.y);
 
     // Subtle heat shimmer
-    let shimmer = sin(uv.y * 20.0 + u.time * 0.8 + sin(uv.x * 8.0) * 1.5) * 0.005;
+    let shimmer = sin(uv.y * 20.0 + u.time * 0.8 + sin(uv.x * 8.0) * 1.5) * u.presence * 0.01;
     let bg_warm = bg + vec3<f32>(0.02, 0.005, 0.0) * (shimmer + 0.5);
 
     // === Compose ===

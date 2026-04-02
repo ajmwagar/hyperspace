@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -53,7 +56,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let diamond_dist = abs(centered.x) + abs(centered.y);
 
     // Pull strength increases toward corners, modulated by bass and beat
-    let strength = 0.012 * (1.0 + u.bass * 0.6 + u.beat * 0.3);
+    let strength = 0.012 * (1.0 + u.bass * 0.6 + u.beat * 0.3) + u.onset * 0.003;
 
     // Pull direction: inward along the diamond normal (sign-based axes)
     let sx = sign(centered.x);

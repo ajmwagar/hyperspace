@@ -20,6 +20,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -49,7 +52,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let prev = textureSample(prev_frame, prev_sampler, in.uv);
     let brightness = dot(prev.rgb, vec3<f32>(0.299, 0.587, 0.114));
 
-    let offset = u.time * 0.05;
+    let offset = u.time * 0.05 + u.onset * 0.1;
     let t = fract(brightness + offset);
     let r = sin(t * 6.28318) * 0.5 + 0.5;
     let g = sin(t * 6.28318 + 2.094) * 0.5 + 0.5;

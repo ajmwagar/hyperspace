@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -74,7 +77,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Vortex rotation: bass drives speed, beat reverses
     let spin_dir = mix(1.0, -1.0, smoothstep(0.5, 1.0, u.beat));
-    let spin_speed = 0.5 + u.bass * 3.0;
+    let spin_speed = 0.5 + u.bass * 3.0 + u.sub_bass * 1.0;
     let vortex_angle = angle + u.time * spin_speed * spin_dir + radius * 3.0 * sin(u.time * 0.3);
 
     // Reconstruct from warped polar
@@ -101,7 +104,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     col *= 0.3 + u.amplitude * 3.0;
 
     // Beat flash — hot white center pulse
-    let flash_radius = u.beat * (1.0 - radius);
+    let flash_radius = u.onset * (1.0 - radius);
     col += vec3<f32>(1.0, 0.9, 0.7) * flash_radius * 0.5;
 
     // Vignette

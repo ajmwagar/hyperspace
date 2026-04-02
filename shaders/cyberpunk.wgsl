@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -73,7 +76,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let aspect = u.resolution.x / u.resolution.y;
 
     // === Glitch displacement (beat + bass driven) ===
-    let glitch_intensity = u.bass * 0.3 + u.beat * 0.5;
+    let glitch_intensity = u.bass * 0.3 + u.beat * 0.5 + u.onset * 0.4;
     let glitch_band = floor(uv.y * 30.0);
     let glitch_seed = hash(glitch_band + floor(u.time * 12.0));
     if glitch_seed > (1.0 - glitch_intensity) {
@@ -162,7 +165,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         vec3<f32>(0.0, 0.8, 1.0),  // cyan
         neon_hue
     );
-    col += haze_col * haze * (1.0 + u.amplitude * 3.0);
+    col += haze_col * haze * (1.0 + u.sub_bass * 3.0);
 
     // === Horizontal glitch bars ===
     let bar_y = hash(floor(uv.y * 80.0) + floor(u.time * 8.0));

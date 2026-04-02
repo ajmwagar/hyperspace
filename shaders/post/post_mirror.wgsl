@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -48,7 +51,7 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Beat-driven split offset: the mirror line wobbles slightly with beat
-    let split_offset = u.beat * 0.02 + sin(u.time * 0.3) * 0.005;
+    let split_offset = u.beat * 0.02 + sin(u.time * 0.3) * 0.005 + u.onset * 0.03;
     let split = 0.5 + split_offset;
 
     // Mirror: if on the right side, reflect the x coordinate

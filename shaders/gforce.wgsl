@@ -32,6 +32,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -227,7 +230,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let thickness = wave_thick * (1.0 + u.amplitude * 0.5);
-    let wave_bright = smoothstep(thickness, 0.0, wave_dist) * wave_intensity;
+    let wave_bright = smoothstep(thickness, 0.0, wave_dist) * (wave_intensity + u.onset * 0.3);
 
     // Waveshape color: white-hot core
     let wave_color = vec3<f32>(1.0, 0.95, 0.9) * wave_bright;
@@ -255,7 +258,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var final_col = mix(combined, mapped * brightness * 2.0, color_blend);
 
     // Beat: brief flash
-    final_col += vec3<f32>(0.1, 0.08, 0.06) * u.beat * 0.3;
+    final_col += vec3<f32>(0.1, 0.08, 0.06) * u.beat * 0.3 + u.onset * 0.15;
 
     return vec4<f32>(final_col, 1.0);
 }

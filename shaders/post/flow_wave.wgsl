@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -48,7 +51,7 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Wave frequency driven by mid, with a comfortable base
-    let freq = 4.0 + u.mid * 8.0;
+    let freq = 4.0 + u.mid * 8.0 + u.sub_bass * 2.0;
 
     // Wave amplitude driven by bass and overall amplitude
     let wave_amp = 0.008 * (1.0 + u.bass * 0.6 + u.amplitude * 0.4);

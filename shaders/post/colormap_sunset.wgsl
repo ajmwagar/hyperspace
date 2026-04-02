@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -51,7 +54,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let brightness = dot(prev.rgb, vec3<f32>(0.299, 0.587, 0.114));
 
     // Drift offset with beat-driven pulse
-    let offset = u.time * 0.025 + u.beat * 0.08;
+    let offset = u.time * 0.025 + u.beat * 0.08 + u.onset * 0.1;
     let t = fract(brightness + offset);
 
     // Sunset gradient: deep purple -> magenta/pink -> warm orange -> golden yellow

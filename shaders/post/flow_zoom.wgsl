@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -54,7 +57,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let breath = sin(u.time * breath_rate) * 0.5 + 0.5;
 
     // Zoom factor oscillates between slight zoom-in and zoom-out
-    let zoom_amount = 0.006 * (1.0 + u.bass * 0.8 + u.beat * 0.5);
+    let zoom_amount = 0.006 * (1.0 + u.bass * 0.8 + u.beat * 0.5) + u.onset * 0.01;
     let zoom = 1.0 + (breath * 2.0 - 1.0) * zoom_amount;
 
     // Scale UVs from center

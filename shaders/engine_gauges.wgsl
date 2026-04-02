@@ -17,6 +17,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -85,13 +88,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tick_color = vec3<f32>(0.3, 0.4, 0.3) * tick * tick_vis;
 
     // Bass meter (bottom bar)
-    let bass_bar = step(0.95, uv.y) * step(uv.x, u.bass * 3.0);
+    let bass_bar = step(0.95, uv.y) * step(uv.x, u.bass * 3.0) * (1.0 + u.sub_bass * 2.0);
     let bass_color = vec3<f32>(0.8, 0.2, 0.1) * bass_bar;
 
     // Beat indicator (pulsing border)
     let border = step(uv.x, 0.005) + step(0.995, uv.x) +
                  step(uv.y, 0.005) + step(0.995, uv.y);
-    let beat_glow = vec3<f32>(1.0, 0.5, 0.2) * border * u.beat;
+    let beat_glow = vec3<f32>(1.0, 0.5, 0.2) * border * (u.beat + u.onset * 0.5);
 
     // Combine
     var color = bg + bar_color * filled * bar_gap + tick_color + bass_color + beat_glow;

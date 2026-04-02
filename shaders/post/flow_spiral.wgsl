@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -51,7 +54,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let angle = atan2(centered.y, centered.x);
     let r = length(centered);
 
-    let speed = 0.02 * (1.0 + u.bass * 0.5);
+    let speed = 0.02 * (1.0 + u.bass * 0.5) + u.onset * 0.01;
     let pull = -0.005 * (1.0 + u.amplitude * 0.3);
 
     let flow = vec2<f32>(

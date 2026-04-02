@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -51,7 +54,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Rotation speed driven by amplitude, with a slow base rate
     let base_speed = 0.01;
-    let speed = base_speed * (1.0 + u.amplitude * 2.0 + u.beat * 0.8);
+    let speed = base_speed * (1.0 + u.amplitude * 2.0 + u.beat * 0.8) + u.onset * 0.02;
 
     // Rotation angle per frame (small incremental rotation)
     let angle = speed;
