@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -214,7 +217,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         // Fresnel rim lighting
         let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 4.0);
-        let rim_pulse = 1.0 + u.beat * 0.6;
+        let rim_pulse = 1.0 + u.beat * 0.6 + u.presence * 0.4;
 
         // Left bust: cyan rim on left edge
         var rim_color = vec3<f32>(0.0, 0.9, 1.0); // cyan
@@ -242,7 +245,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let bridge_t = (p.x - bridge_left.x) / (bridge_right.x - bridge_left.x);
     if bridge_t > -0.05 && bridge_t < 1.05 {
         let bridge_y = bridge_left.y;
-        let wave_amp = 0.04 + u.bass * 0.03;
+        let wave_amp = 0.04 + u.sub_bass * 0.04;
         let wave_freq = 4.0;
         let wave_speed = 2.0 + u.mid * 2.0;
 
@@ -267,7 +270,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // White flares at endpoints
         let flare_l = exp(-length(p - bridge_left) * 20.0) * 0.7;
         let flare_r = exp(-length(p - bridge_right) * 20.0) * 0.7;
-        col += vec3<f32>(1.0, 0.95, 0.9) * (flare_l + flare_r) * (0.5 + u.beat * 0.5);
+        col += vec3<f32>(1.0, 0.95, 0.9) * (flare_l + flare_r) * (0.5 + u.beat * 0.5 + u.onset * 0.8);
     }
 
     // ========== 6. Post-processing ==========

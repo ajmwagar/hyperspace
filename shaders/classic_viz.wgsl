@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -118,7 +121,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // === Center orb — pulses with beat ===
-    let orb_r = 0.08 + u.beat * 0.06 + u.amplitude * 0.04;
+    let orb_r = 0.08 + u.beat * 0.06 + u.amplitude * 0.04 + u.onset * 0.4;
     let orb_dist = smoothstep(orb_r, 0.0, radius);
     let orb_hue = fract(u.time * 0.2);
     col += hsv(orb_hue, 0.5, 1.0) * orb_dist;
@@ -131,7 +134,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let spark_angle = angle + u.time * 0.8;
     let spark_pattern = sin(spark_angle * 20.0) * sin(radius * 30.0 - u.time * 5.0);
     let spark = smoothstep(0.7, 1.0, spark_pattern) * smoothstep(0.2, 0.5, radius) * smoothstep(1.5, 0.8, radius);
-    col += vec3<f32>(1.0, 1.0, 1.0) * spark * u.high * 0.3;
+    col += vec3<f32>(1.0, 1.0, 1.0) * spark * u.presence * 0.3;
 
     // === Beat flash ring ===
     if u.beat > 0.3 {

@@ -418,10 +418,13 @@ fn analyze_channel(
         spectrum.push(fft_buf[i].norm() / n as f32);
     }
 
+    // Tighter bands: bass focuses on kick/bass guitar, not low-end mud
     let bin_hz = sample_rate / n as f32;
-    let bass_end = (250.0 / bin_hz) as usize;
+    let bass_end = (150.0 / bin_hz) as usize;   // was 250Hz — now 60-150Hz (kick + bass fundamental)
     let mid_end = (4000.0 / bin_hz) as usize;
     let high_end = (20000.0 / bin_hz).min(half as f32) as usize;
+
+    let bass_start = (60.0 / bin_hz) as usize;  // start at 60Hz, skip sub-bass
 
     let band_energy = |from: usize, to: usize| -> f32 {
         if to <= from { return 0.0; }
@@ -430,7 +433,7 @@ fn analyze_channel(
 
     ChannelAnalysis {
         amplitude: rms,
-        bass: band_energy(1, bass_end).sqrt(),
+        bass: band_energy(bass_start, bass_end).sqrt(),
         mid: band_energy(bass_end, mid_end).sqrt(),
         high: band_energy(mid_end, high_end).sqrt(),
         spectrum,

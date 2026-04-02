@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -97,7 +100,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     col += sun_col;
 
     // Ground plane — perspective grid
-    let horizon = 0.45 + u.bass * 0.02;
+    let horizon = 0.45 + u.bass * 0.02 + u.sub_bass * 0.03;
 
     if uv.y < horizon {
         let gy = horizon - uv.y;
@@ -112,7 +115,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Grid lines
         let grid_x = abs(fract(gx * 0.5) - 0.5);
         let grid_z = abs(fract(gz * 0.5) - 0.5);
-        let line_w = 0.02 + u.amplitude * 0.03;
+        let line_w = 0.02 + u.amplitude * 0.03 - u.presence * 0.01;
         let grid_line = smoothstep(line_w, 0.0, grid_x) + smoothstep(line_w, 0.0, grid_z);
         let grid_fade = exp(-gy * 3.0);
 
@@ -148,8 +151,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let bar_fill = step(uv.y, bar_h) * bar_gap;
     col += vec3<f32>(0.0, 0.8, 1.0) * bar_fill * 0.5;
 
-    // Beat lightning
-    if u.beat > 0.5 {
+    // Beat/onset lightning
+    if u.beat > 0.5 || u.onset > 0.5 {
         let lx = uv.x + sin(uv.y * 50.0 + u.time * 100.0) * 0.02;
         let bolt = smoothstep(0.003, 0.0, abs(lx - 0.5));
         // Branch

@@ -22,6 +22,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -68,12 +71,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Julia set constant — bass morphs the seed
     let seed_angle = u.time * 0.15 + u.bass * 2.0;
-    let seed_radius = 0.7885 + sin(u.time * 0.3) * 0.05 + u.mid * 0.1;
+    let seed_radius = 0.7885 + sin(u.time * 0.3) * 0.05 + u.mid * 0.1 + u.presence * 0.05;
     var c = vec2<f32>(cos(seed_angle), sin(seed_angle)) * seed_radius;
 
-    // Beat: sudden seed jump
-    if u.beat > 0.7 {
-        c += vec2<f32>(sin(u.time * 37.0), cos(u.time * 43.0)) * 0.05 * u.beat;
+    // Beat/onset: sudden seed jump
+    if u.onset > 0.7 {
+        c += vec2<f32>(sin(u.time * 37.0), cos(u.time * 43.0)) * 0.05 * u.onset;
     }
 
     // Iterate Julia set

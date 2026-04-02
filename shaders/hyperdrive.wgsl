@@ -21,6 +21,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -64,7 +67,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Warp speed factor: bass drives acceleration
     let speed = 2.0 + u.bass * 8.0 + u.amplitude * 4.0;
-    let streak_len = 0.05 + u.bass * 0.4 + u.amplitude * 0.2;
+    let streak_len = 0.05 + u.sub_bass * 0.4 + u.amplitude * 0.2;
 
     // Multiple star layers for depth
     for (var layer = 0u; layer < 4u; layer++) {
@@ -118,7 +121,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Central glow — always present, intensifies with speed
     let center_dist = length(p);
-    let core_glow = exp(-center_dist * 3.0) * (0.1 + u.amplitude * 0.4);
+    let core_glow = exp(-center_dist * 3.0) * (0.1 + u.amplitude * 0.4 + u.onset * 0.5);
     col += vec3<f32>(0.6, 0.7, 1.0) * core_glow;
 
     // Radial light streaks from center (subtle)

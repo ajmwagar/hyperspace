@@ -17,6 +17,9 @@ struct Uniforms {
     mid_r: f32,
     high_l: f32,
     high_r: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -67,7 +70,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let depth_factor = clamp(tunnel_z * 0.08, 0.0, 1.0);
 
     // Scroll through tunnel based on time + bass
-    let speed = u.time * 2.0 + u.bass * 5.0;
+    let speed = u.time * 2.0 + u.bass * 5.0 + u.sub_bass * 2.0;
     let tx = tunnel_x + sin(u.time * 0.3) * u.mid + stereo_bend * depth_factor;
     let ty = tunnel_z + speed + stereo_bend * depth_factor * 0.3;
 
@@ -77,7 +80,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let lines = smoothstep(0.0, 0.1 + u.amplitude * 0.5, abs(grid));
 
     // Color palette - shifts with beat, stereo tints L/R
-    let beat_hue = u.beat * 0.3;
+    let beat_hue = u.beat * 0.3 + u.onset * 0.3;
     let hue = fract(tunnel_z * 0.1 + u.time * 0.05 + beat_hue + stereo_bend * 0.1);
     let col = hsv_to_rgb(vec3<f32>(hue, 0.8, lines));
 
