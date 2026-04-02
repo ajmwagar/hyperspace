@@ -129,7 +129,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let spec_idx = u32(rain_col_idx * 512.0 / rain_cols);
     var spec_boost = 0.0;
     if spec_idx < 512u {
-        spec_boost = spectrum[spec_idx] * 8.0;
+        spec_boost = spectrum[spec_idx] * 1.5;
     }
 
     col += rain_color * glyph * fade * (0.3 + spec_boost);

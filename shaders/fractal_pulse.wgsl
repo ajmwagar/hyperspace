@@ -112,7 +112,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let spec_idx = u32(t * 128.0);
         var spec_mod = 0.0;
         if spec_idx < 512u {
-            spec_mod = spectrum[spec_idx] * 5.0;
+            spec_mod = spectrum[spec_idx] * 1.0;
         }
 
         // Iq palette with audio modulation

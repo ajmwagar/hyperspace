@@ -35,9 +35,9 @@ const ONSET_ATTACK: f32 = 0.8;    // onsets are instant
 const ONSET_RELEASE: f32 = 0.3;   // decay quickly — it's a transient detector
 const ONSET_THRESHOLD: f32 = 0.02; // minimum flux to register
 
-// Spectrum smoothing
-const SPECTRUM_ATTACK: f32 = 0.6;
-const SPECTRUM_RELEASE: f32 = 0.08;
+// Spectrum smoothing — release must be fast enough for bars to bounce
+const SPECTRUM_ATTACK: f32 = 0.7;
+const SPECTRUM_RELEASE: f32 = 0.2;
 
 // ============================================================
 // Data types

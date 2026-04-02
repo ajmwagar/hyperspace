@@ -63,7 +63,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let spectrum_idx = u32(bar_idx * 512.0 / num_bars);
     var bar_height = 0.0;
     if spectrum_idx < 512u {
-        bar_height = spectrum[spectrum_idx] * 15.0; // scale up for visibility
+        bar_height = spectrum[spectrum_idx]; // already log-scaled 0-1
     }
     bar_height = clamp(bar_height, 0.0, 1.0);
 

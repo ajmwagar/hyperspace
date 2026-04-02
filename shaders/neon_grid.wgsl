@@ -145,7 +145,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let spec_idx = u32(bar_idx * 4.0);
     var bar_h = 0.0;
     if spec_idx < 512u {
-        bar_h = spectrum[spec_idx] * 20.0;
+        bar_h = spectrum[spec_idx] * 0.15; // log-scaled, scale to bar height
     }
     bar_h = clamp(bar_h, 0.0, 0.15);
     let bar_fill = step(uv.y, bar_h) * bar_gap;

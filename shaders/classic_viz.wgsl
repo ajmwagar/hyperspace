@@ -88,7 +88,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let spec_idx = u32(bar_idx * 4.0);
     var spec_val = 0.0;
     if spec_idx < 512u {
-        spec_val = spectrum[spec_idx] * 15.0;
+        spec_val = spectrum[spec_idx];
     }
     spec_val = clamp(spec_val, 0.0, 1.0);
 
@@ -109,7 +109,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let ring_spec_idx = u32(f32(i) * 32.0);
         var ring_amp = 0.0;
         if ring_spec_idx < 512u {
-            ring_amp = spectrum[ring_spec_idx] * 8.0;
+            ring_amp = spectrum[ring_spec_idx];
         }
 
         let wobble = sin(angle * (3.0 + f32(i)) + u.time * (1.0 + f32(i) * 0.3)) * ring_amp * 0.03;
