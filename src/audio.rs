@@ -11,15 +11,16 @@ pub const FFT_SIZE: usize = 1024;
 
 const NOISE_FLOOR: f32 = 1e-5;
 
-// Per-band attack/release — bass sustains, highs snap
-const BASS_ATTACK: f32 = 0.6;      // snappy rise — feel the transient
-const BASS_RELEASE: f32 = 0.15;    // fast enough to reset between kicks
-const MID_ATTACK: f32 = 0.5;
-const MID_RELEASE: f32 = 0.12;    // moderate decay
-const HIGH_ATTACK: f32 = 0.7;
-const HIGH_RELEASE: f32 = 0.25;   // fast decay — highs are transient
-const AMP_ATTACK: f32 = 0.5;
-const AMP_RELEASE: f32 = 0.08;    // overall envelope sustains
+// Base attack/release per band — these get MODULATED by the crest factor
+// Transient material (kick) will use the fast end, sustained (pad) the slow end
+const BASS_ATTACK_RANGE: [f32; 2] = [0.3, 0.8];   // [sustained, transient]
+const BASS_RELEASE_RANGE: [f32; 2] = [0.04, 0.2];  // [sustained, transient]
+const MID_ATTACK_RANGE: [f32; 2] = [0.25, 0.7];
+const MID_RELEASE_RANGE: [f32; 2] = [0.05, 0.18];
+const HIGH_ATTACK_RANGE: [f32; 2] = [0.4, 0.85];
+const HIGH_RELEASE_RANGE: [f32; 2] = [0.1, 0.35];
+const AMP_ATTACK_RANGE: [f32; 2] = [0.25, 0.7];
+const AMP_RELEASE_RANGE: [f32; 2] = [0.03, 0.12];
 
 // AGC: much less aggressive — let dynamics breathe
 const AGC_ATTACK: f32 = 0.005;    // rises very slowly (was 0.02)
@@ -90,10 +91,14 @@ pub struct AudioData {
     pub high: f32,
     pub spectrum: Vec<f32>,
 
-    // New: additional analysis
+    // Additional analysis
     pub onset: f32,       // spectral flux — fires on note onsets, transients
     pub sub_bass: f32,    // 20-60Hz — sub rumble, separate from kick
     pub presence: f32,    // 4-8kHz — vocal presence, cymbal shimmer
+
+    // Adaptive dynamics
+    pub crest: f32,       // crest factor (0-1 normalized): 0=sustained, 1=transient
+    pub centroid: f32,    // spectral centroid (0-1 normalized): 0=bassy, 1=bright
 
     // Per-channel stereo
     pub left: ChannelAnalysis,
@@ -125,6 +130,8 @@ impl Default for AudioData {
             onset: 0.0,
             sub_bass: 0.0,
             presence: 0.0,
+            crest: 0.0,
+            centroid: 0.0,
             left: ChannelAnalysis { spectrum: vec![0.0; half], ..Default::default() },
             right: ChannelAnalysis { spectrum: vec![0.0; half], ..Default::default() },
             waveform_l: vec![0.0; 512],
@@ -137,6 +144,43 @@ impl Default for AudioData {
             prev_spectrum: vec![0.0; half],
         }
     }
+}
+
+/// Compute crest factor from raw samples: peak / RMS, normalized to 0-1.
+/// High crest (>3) = sharp transient. Low crest (<1.5) = sustained.
+fn compute_crest(samples: &[(f32, f32)]) -> f32 {
+    let mut peak = 0.0f32;
+    let mut sum_sq = 0.0f32;
+    for &(l, r) in samples {
+        let mono = (l + r) * 0.5;
+        peak = peak.max(mono.abs());
+        sum_sq += mono * mono;
+    }
+    let rms = (sum_sq / samples.len() as f32).sqrt();
+    if rms < 1e-8 { return 0.0; }
+    let crest = peak / rms;
+    // Normalize: crest of 1.0 (DC) → 0.0, crest of 5.0+ → 1.0
+    ((crest - 1.0) / 4.0).clamp(0.0, 1.0)
+}
+
+/// Compute spectral centroid: weighted average frequency, normalized to 0-1.
+fn compute_centroid(spectrum: &[f32], bin_hz: f32, max_hz: f32) -> f32 {
+    let mut weighted_sum = 0.0f32;
+    let mut total_energy = 0.0f32;
+    for (i, &mag) in spectrum.iter().enumerate() {
+        let freq = i as f32 * bin_hz;
+        if freq > max_hz { break; }
+        weighted_sum += freq * mag;
+        total_energy += mag;
+    }
+    if total_energy < 1e-10 { return 0.0; }
+    let centroid_hz = weighted_sum / total_energy;
+    (centroid_hz / max_hz).clamp(0.0, 1.0)
+}
+
+/// Interpolate between [sustained, transient] based on crest factor.
+fn adaptive_param(range: [f32; 2], crest: f32) -> f32 {
+    range[0] + (range[1] - range[0]) * crest
 }
 
 /// Per-band asymmetric EMA with custom attack/release.
@@ -266,26 +310,40 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
                 let raw_mid = (raw_l.mid + raw_r.mid) * 0.5;
                 let raw_high = (raw_l.high + raw_r.high) * 0.5;
 
-                // Noise gate
+                // ============================================================
+                // Adaptive dynamics from crest factor
+                // ============================================================
+                let crest = compute_crest(&samples);
+                let bass_attack = adaptive_param(BASS_ATTACK_RANGE, crest);
+                let bass_release = adaptive_param(BASS_RELEASE_RANGE, crest);
+                let mid_attack = adaptive_param(MID_ATTACK_RANGE, crest);
+                let mid_release = adaptive_param(MID_RELEASE_RANGE, crest);
+                let high_attack = adaptive_param(HIGH_ATTACK_RANGE, crest);
+                let high_release = adaptive_param(HIGH_RELEASE_RANGE, crest);
+                let amp_attack = adaptive_param(AMP_ATTACK_RANGE, crest);
+                let amp_release = adaptive_param(AMP_RELEASE_RANGE, crest);
+
+                // Noise gate (use adaptive release for smooth decay to zero)
                 if raw_amp < NOISE_FLOOR {
                     let mut data = shared.lock().unwrap();
-                    data.amplitude = smooth_band(data.amplitude, 0.0, AMP_ATTACK, AMP_RELEASE);
-                    data.bass = smooth_band(data.bass, 0.0, BASS_ATTACK, BASS_RELEASE);
-                    data.mid = smooth_band(data.mid, 0.0, MID_ATTACK, MID_RELEASE);
-                    data.high = smooth_band(data.high, 0.0, HIGH_ATTACK, HIGH_RELEASE);
-                    data.sub_bass = smooth_band(data.sub_bass, 0.0, BASS_ATTACK, BASS_RELEASE * 0.5);
-                    data.presence = smooth_band(data.presence, 0.0, HIGH_ATTACK, HIGH_RELEASE);
+                    data.amplitude = smooth_band(data.amplitude, 0.0, amp_attack, amp_release);
+                    data.bass = smooth_band(data.bass, 0.0, bass_attack, bass_release);
+                    data.mid = smooth_band(data.mid, 0.0, mid_attack, mid_release);
+                    data.high = smooth_band(data.high, 0.0, high_attack, high_release);
+                    data.sub_bass = smooth_band(data.sub_bass, 0.0, bass_attack, bass_release * 0.5);
+                    data.presence = smooth_band(data.presence, 0.0, high_attack, high_release);
                     data.onset = smooth_band(data.onset, 0.0, ONSET_ATTACK, ONSET_RELEASE);
-                    data.left.amplitude = smooth_band(data.left.amplitude, 0.0, AMP_ATTACK, AMP_RELEASE);
-                    data.right.amplitude = smooth_band(data.right.amplitude, 0.0, AMP_ATTACK, AMP_RELEASE);
+                    data.left.amplitude = smooth_band(data.left.amplitude, 0.0, amp_attack, amp_release);
+                    data.right.amplitude = smooth_band(data.right.amplitude, 0.0, amp_attack, amp_release);
                     data.beat *= BEAT_DECAY;
+                    data.crest = smooth_band(data.crest, 0.0, 0.3, 0.05);
                     continue;
                 }
 
                 let half = FFT_SIZE / 2;
 
                 // ============================================================
-                // Soft AGC — preserves dynamics, doesn't flatten
+                // Soft AGC + adaptive smoothing
                 // ============================================================
                 let mut data = shared.lock().unwrap();
                 update_peak(&mut data.peak_amplitude, raw_amp);
@@ -298,13 +356,14 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
                 let norm_mid = soft_normalize(raw_mid, data.peak_mid);
                 let norm_high = soft_normalize(raw_high, data.peak_high);
 
-                // ============================================================
-                // Per-band smoothing — each band has its own character
-                // ============================================================
-                data.amplitude = smooth_band(data.amplitude, norm_amp, AMP_ATTACK, AMP_RELEASE);
-                data.bass = smooth_band(data.bass, norm_bass, BASS_ATTACK, BASS_RELEASE);
-                data.mid = smooth_band(data.mid, norm_mid, MID_ATTACK, MID_RELEASE);
-                data.high = smooth_band(data.high, norm_high, HIGH_ATTACK, HIGH_RELEASE);
+                // Store crest + compute centroid
+                data.crest = smooth_band(data.crest, crest, 0.5, 0.1);
+
+                // Per-band smoothing with adaptive attack/release
+                data.amplitude = smooth_band(data.amplitude, norm_amp, amp_attack, amp_release);
+                data.bass = smooth_band(data.bass, norm_bass, bass_attack, bass_release);
+                data.mid = smooth_band(data.mid, norm_mid, mid_attack, mid_release);
+                data.high = smooth_band(data.high, norm_high, high_attack, high_release);
 
                 // ============================================================
                 // Extra bands: sub-bass (20-60Hz) and presence (4-8kHz)
@@ -325,8 +384,12 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
                 let raw_presence = band_energy(4000.0, 8000.0).sqrt();
                 let norm_sub = soft_normalize(raw_sub, data.peak_bass); // share bass peak
                 let norm_presence = soft_normalize(raw_presence, data.peak_high); // share high peak
-                data.sub_bass = smooth_band(data.sub_bass, norm_sub, BASS_ATTACK, BASS_RELEASE * 0.5);
-                data.presence = smooth_band(data.presence, norm_presence, HIGH_ATTACK, HIGH_RELEASE);
+                data.sub_bass = smooth_band(data.sub_bass, norm_sub, bass_attack, bass_release * 0.5);
+                data.presence = smooth_band(data.presence, norm_presence, high_attack, high_release);
+
+                // Spectral centroid: where is the "center of mass" of the frequency content?
+                let centroid = compute_centroid(&combined_spectrum, bin_hz, 16000.0);
+                data.centroid = smooth_band(data.centroid, centroid, 0.3, 0.08);
 
                 // ============================================================
                 // Spectral flux (onset detection)
@@ -350,14 +413,14 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
                 // ============================================================
                 let norm_l_amp = soft_normalize(raw_l.amplitude, data.peak_amplitude);
                 let norm_r_amp = soft_normalize(raw_r.amplitude, data.peak_amplitude);
-                data.left.amplitude = smooth_band(data.left.amplitude, norm_l_amp, AMP_ATTACK, AMP_RELEASE);
-                data.right.amplitude = smooth_band(data.right.amplitude, norm_r_amp, AMP_ATTACK, AMP_RELEASE);
-                data.left.bass = smooth_band(data.left.bass, soft_normalize(raw_l.bass, data.peak_bass), BASS_ATTACK, BASS_RELEASE);
-                data.right.bass = smooth_band(data.right.bass, soft_normalize(raw_r.bass, data.peak_bass), BASS_ATTACK, BASS_RELEASE);
-                data.left.mid = smooth_band(data.left.mid, soft_normalize(raw_l.mid, data.peak_mid), MID_ATTACK, MID_RELEASE);
-                data.right.mid = smooth_band(data.right.mid, soft_normalize(raw_r.mid, data.peak_mid), MID_ATTACK, MID_RELEASE);
-                data.left.high = smooth_band(data.left.high, soft_normalize(raw_l.high, data.peak_high), HIGH_ATTACK, HIGH_RELEASE);
-                data.right.high = smooth_band(data.right.high, soft_normalize(raw_r.high, data.peak_high), HIGH_ATTACK, HIGH_RELEASE);
+                data.left.amplitude = smooth_band(data.left.amplitude, norm_l_amp, amp_attack, amp_release);
+                data.right.amplitude = smooth_band(data.right.amplitude, norm_r_amp, amp_attack, amp_release);
+                data.left.bass = smooth_band(data.left.bass, soft_normalize(raw_l.bass, data.peak_bass), bass_attack, bass_release);
+                data.right.bass = smooth_band(data.right.bass, soft_normalize(raw_r.bass, data.peak_bass), bass_attack, bass_release);
+                data.left.mid = smooth_band(data.left.mid, soft_normalize(raw_l.mid, data.peak_mid), mid_attack, mid_release);
+                data.right.mid = smooth_band(data.right.mid, soft_normalize(raw_r.mid, data.peak_mid), mid_attack, mid_release);
+                data.left.high = smooth_band(data.left.high, soft_normalize(raw_l.high, data.peak_high), high_attack, high_release);
+                data.right.high = smooth_band(data.right.high, soft_normalize(raw_r.high, data.peak_high), high_attack, high_release);
 
                 // ============================================================
                 // Spectrum: log-scale with per-bin smoothing
@@ -519,10 +582,44 @@ mod tests {
 
     #[test]
     fn per_band_smoothing() {
-        // Bass should decay slower than highs
-        let bass = smooth_band(1.0, 0.0, BASS_ATTACK, BASS_RELEASE);
-        let high = smooth_band(1.0, 0.0, HIGH_ATTACK, HIGH_RELEASE);
+        // Bass should decay slower than highs (at any crest level)
+        let crest = 0.5; // mid-range crest
+        let bass_r = adaptive_param(BASS_RELEASE_RANGE, crest);
+        let high_r = adaptive_param(HIGH_RELEASE_RANGE, crest);
+        let bass = smooth_band(1.0, 0.0, 0.5, bass_r);
+        let high = smooth_band(1.0, 0.0, 0.5, high_r);
         assert!(bass > high, "bass should decay slower: bass={} high={}", bass, high);
+    }
+
+    #[test]
+    fn adaptive_params_range() {
+        // Crest 0 (sustained) → slow end, crest 1 (transient) → fast end
+        let slow = adaptive_param(BASS_ATTACK_RANGE, 0.0);
+        let fast = adaptive_param(BASS_ATTACK_RANGE, 1.0);
+        assert_eq!(slow, BASS_ATTACK_RANGE[0]);
+        assert_eq!(fast, BASS_ATTACK_RANGE[1]);
+        assert!(fast > slow, "transient attack should be faster");
+    }
+
+    #[test]
+    fn crest_factor_ranges() {
+        // Silence → 0
+        let silence: Vec<(f32, f32)> = vec![(0.0, 0.0); 1024];
+        assert_eq!(compute_crest(&silence), 0.0);
+        // Pure sine → low crest (~1.4, maps to ~0.1)
+        let sine: Vec<(f32, f32)> = (0..1024)
+            .map(|i| {
+                let s = (2.0 * std::f32::consts::PI * i as f32 / 1024.0).sin();
+                (s, s)
+            })
+            .collect();
+        let c = compute_crest(&sine);
+        assert!(c < 0.3, "sine crest should be low: {}", c);
+        // Impulse → high crest
+        let mut impulse: Vec<(f32, f32)> = vec![(0.0, 0.0); 1024];
+        impulse[0] = (1.0, 1.0);
+        let c = compute_crest(&impulse);
+        assert!(c > 0.8, "impulse crest should be high: {}", c);
     }
 
     #[test]
