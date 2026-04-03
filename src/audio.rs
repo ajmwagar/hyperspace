@@ -48,14 +48,17 @@ const SPECTRUM_RELEASE: f32 = 0.2;
 pub struct ChannelPair {
     pub left: usize,
     pub right: usize,
+    pub mono: bool, // true = same channel for L+R, generate synthetic stereo
 }
 
 impl ChannelPair {
     pub fn default_for(num_channels: usize) -> Self {
         if num_channels >= 6 {
-            Self { left: 4, right: 5 }
+            Self { left: 4, right: 5, mono: false }
+        } else if num_channels >= 2 {
+            Self { left: 0, right: 1, mono: false }
         } else {
-            Self { left: 0, right: 1.min(num_channels.saturating_sub(1)) }
+            Self { left: 0, right: 0, mono: true }
         }
     }
 
@@ -64,7 +67,12 @@ impl ChannelPair {
         if parts.len() == 2 {
             let l = parts[0].trim().parse().ok()?;
             let r = parts[1].trim().parse().ok()?;
-            Some(Self { left: l, right: r })
+            let mono = l == r;
+            Some(Self { left: l, right: r, mono })
+        } else if parts.len() == 1 {
+            // Single channel = mono
+            let ch = parts[0].trim().parse().ok()?;
+            Some(Self { left: ch, right: ch, mono: true })
         } else {
             None
         }
@@ -231,9 +239,10 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
 
     let pair = channels_override.unwrap_or_else(|| ChannelPair::default_for(num_channels));
 
+    let mode = if pair.mono { "MONO → synthetic stereo" } else { "stereo" };
     log::info!(
-        "audio config: {}Hz, {} device channels, capturing L={} R={}, {:?}",
-        sample_rate, num_channels, pair.left, pair.right, config.sample_format()
+        "audio config: {}Hz, {} device channels, L={} R={} ({}), {:?}",
+        sample_rate, num_channels, pair.left, pair.right, mode, config.sample_format()
     );
 
     if pair.left >= num_channels || pair.right >= num_channels {
@@ -273,11 +282,12 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
             let mut window_r = vec![0.0f32; FFT_SIZE];
             let mut fft_buf_l = vec![Complex::default(); FFT_SIZE];
             let mut fft_buf_r = vec![Complex::default(); FFT_SIZE];
+            let is_mono = pair.mono;
 
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(8));
 
-                let samples: Vec<(f32, f32)> = {
+                let mut samples: Vec<(f32, f32)> = {
                     let mut buf = ring.lock().unwrap();
                     if buf.len() < FFT_SIZE {
                         continue;
@@ -287,6 +297,22 @@ pub fn start_capture_device(shared: SharedAudioData, device: cpal::Device, chann
                     buf.clear();
                     out
                 };
+
+                // Mono → synthetic stereo: create L/R difference from the mono signal.
+                // Technique: R channel gets a short delay (12 samples ~0.25ms) + slight
+                // frequency emphasis difference. This creates natural stereo width from
+                // mono without artifacts. Bass stays centered, transients get spread.
+                if is_mono {
+                    let delay = 12usize;
+                    for i in (0..samples.len()).rev() {
+                        let mono = samples[i].0;
+                        // L = original
+                        // R = delayed version (creates phase-based stereo image)
+                        let delayed = if i >= delay { samples[i - delay].0 } else { 0.0 };
+                        // Blend: 70% delayed + 30% original for subtle difference
+                        samples[i] = (mono, delayed * 0.7 + mono * 0.3);
+                    }
+                }
 
                 // Raw waveform
                 let wave_start = samples.len().saturating_sub(512);

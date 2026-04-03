@@ -402,14 +402,15 @@ impl ApplicationHandler for App {
                         if let Some(text) = &event.text {
                             if text.as_str() == "{" {
                                 let current = self.audio_channels
-                                    .unwrap_or(audio::ChannelPair { left: 0, right: 1 });
+                                    .unwrap_or(audio::ChannelPair { left: 0, right: 1, mono: false });
                                 if current.left >= 2 {
                                     let new_pair = audio::ChannelPair {
                                         left: current.left - 2,
                                         right: current.right - 2,
+                                        mono: current.left - 2 == current.right - 2,
                                     };
                                     self.audio_channels = Some(new_pair);
-                                    log::info!("channel pair: L={} R={}", new_pair.left, new_pair.right);
+                                    log::info!("channel pair: L={} R={}{}", new_pair.left, new_pair.right, if new_pair.mono { " (mono)" } else { "" });
                                     if let Some(stream) = switch_to_device_info(
                                         &self.audio_devices[self.audio_device_index],
                                         &self.audio_shared,
@@ -444,13 +445,14 @@ impl ApplicationHandler for App {
                         if let Some(text) = &event.text {
                             if text.as_str() == "}" {
                                 let current = self.audio_channels
-                                    .unwrap_or(audio::ChannelPair { left: 0, right: 1 });
+                                    .unwrap_or(audio::ChannelPair { left: 0, right: 1, mono: false });
                                 let new_pair = audio::ChannelPair {
                                     left: current.left + 2,
                                     right: current.right + 2,
+                                    mono: current.left + 2 == current.right + 2,
                                 };
                                 self.audio_channels = Some(new_pair);
-                                log::info!("channel pair: L={} R={}", new_pair.left, new_pair.right);
+                                log::info!("channel pair: L={} R={}{}", new_pair.left, new_pair.right, if new_pair.mono { " (mono)" } else { "" });
                                 if let Some(stream) = switch_to_device_info(
                                     &self.audio_devices[self.audio_device_index],
                                     &self.audio_shared,
