@@ -1,0 +1,10 @@
+# Ambient — for slow-building, atmospheric music.
+# The nebula shader accumulates over minutes through feedback.
+# Start with silence or a drone and watch it grow.
+
+[audio]
+device = "Scarlett"
+channels = "4,5"
+
+[center]
+shader = "shaders/ambient_nebula.wgsl"
