@@ -91,12 +91,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Sample previous frame — lower decay so trails are vivid, not washed
     let prev = textureSample(prev_frame, prev_sampler, feedback_uv);
-    let decay = 0.88 + u.amplitude * 0.04;
-    // Re-saturate the feedback: push colors away from grey
+    let decay = 0.82 + u.amplitude * 0.05;
+    // Re-saturate the feedback: push colors away from grey HARD
     var fb = prev.rgb * decay;
     let fb_luma = dot(fb, vec3<f32>(0.299, 0.587, 0.114));
-    fb = mix(vec3<f32>(fb_luma), fb, 1.3); // boost saturation of trails
-    var col = max(fb, vec3<f32>(0.0));
+    fb = mix(vec3<f32>(fb_luma), fb, 1.6); // aggressive saturation boost
+    fb = max(fb, vec3<f32>(0.0));
+    // Clamp feedback brightness so it can't accumulate to white
+    let fb_max = max(fb.r, max(fb.g, fb.b));
+    var col = fb;
+    if fb_max > 0.7 {
+        col = fb * (0.7 / fb_max); // hard ceiling on trail brightness
+    }
 
     // === Acid patterns — bold, not subtle ===
 
@@ -139,8 +145,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let spark = step(0.98, hash(floor(p * 40.0) + floor(t * 5.0)));
     col += vec3<f32>(1.0) * spark * u.presence * 0.2;
 
-    // Soft clamp
-    col = col / (col + 0.6) * 1.1;
+    // Tone map: preserve color, prevent blowout to white
+    col = pow(col, vec3<f32>(1.1)); // slight gamma push for contrast on CRT
+    col = min(col, vec3<f32>(1.0));
 
     return vec4<f32>(col, 1.0);
 }

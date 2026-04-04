@@ -1,15 +1,44 @@
-# Acid — liquid acid FX collection.
-# Three acid shaders: melt (feedback), pools (voronoi), worms (tendrils).
-# The acid colormap post shader chains well with any of these.
+# Acid — cycles through acid shaders fullscreen.
+# Press b to skip to next. Auto-advances every 90 seconds.
+# Uses the acid playlist in hyperspace_user.lua.
 
 [audio]
-# device = "Blue Snowball"
-# channels = "0"
 device = "Blackhole 2ch"
 channels = "0,1"
 
+[[clips]]
+name = "acid melt"
+shader = "shaders/acid_melt.wgsl"
+key = "q"
+
+[[clips]]
+name = "acid pools"
+shader = "shaders/acid_pools.wgsl"
+key = "w"
+
+[[clips]]
+name = "acid worms"
+shader = "shaders/acid_worms.wgsl"
+key = "e"
+
+[[clips]]
+name = "acid melt + fire"
+shader = "shaders/acid_melt.wgsl"
+post = ["shaders/post/colormap_fire.wgsl"]
+key = "r"
+
+[[clips]]
+name = "acid pools + neon"
+shader = "shaders/acid_pools.wgsl"
+post = ["shaders/post/colormap_neon.wgsl"]
+key = "a"
+
+[[clips]]
+name = "acid worms + mirror"
+shader = "shaders/acid_worms.wgsl"
+post = ["shaders/post/post_mirror.wgsl"]
+key = "s"
+
+# Start with acid melt fullscreen
 [center]
 shader = "shaders/acid_melt.wgsl"
-
-[sides]
-shader = "shaders/acid_pools.wgsl"
