@@ -7,8 +7,10 @@
 # Uses a custom Lua controller for the playlist logic.
 
 [audio]
-device = "Scarlett"
-channels = "4,5"
+# device = "Scarlett"
+# channels = "4,5"
+device = "Blue Snowball"
+channels = "0"
 
 # Start with G-Force — the Lua controller takes over from here
 [center]

@@ -1,0 +1,13 @@
+# Acid — liquid acid FX collection.
+# Three acid shaders: melt (feedback), pools (voronoi), worms (tendrils).
+# The acid colormap post shader chains well with any of these.
+
+[audio]
+device = "Blue Snowball"
+channels = "0"
+
+[center]
+shader = "shaders/acid_melt.wgsl"
+
+[sides]
+shader = "shaders/acid_pools.wgsl"
