@@ -146,7 +146,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     col *= 1.0 + u.beat * 0.08;
 
     // Inner caustic pattern — the liquid refraction look
-    let caustic = noise(vec2<f32>(v1.z * 10.0 + t * 0.3, v1.x * 8.0 + t * 0.2));
+    let caustic_p = vec2<f32>(v1.z * 10.0 + t * 0.3, v1.x * 8.0 + t * 0.2);
+    let caustic = fract(sin(dot(caustic_p, vec2<f32>(12.9898, 78.233))) * 43758.5453);
     let caustic_line = smoothstep(0.45, 0.55, caustic) * liquid_depth;
     col += cell_col * caustic_line * 0.15 * (0.5 + u.mid * 0.5);
 
