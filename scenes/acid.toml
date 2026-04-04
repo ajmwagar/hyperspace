@@ -3,8 +3,10 @@
 # The acid colormap post shader chains well with any of these.
 
 [audio]
-device = "Blue Snowball"
-channels = "0"
+# device = "Blue Snowball"
+# channels = "0"
+device = "Blackhole 2ch"
+channels = "0,1"
 
 [center]
 shader = "shaders/acid_melt.wgsl"

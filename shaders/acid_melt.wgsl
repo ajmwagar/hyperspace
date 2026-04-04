@@ -89,43 +89,51 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let flow_uv = warped_p * 0.25 + 0.5;
     let feedback_uv = clamp(flow_uv, vec2<f32>(0.001), vec2<f32>(0.999));
 
-    // Sample previous frame with warped coordinates
+    // Sample previous frame — lower decay so trails are vivid, not washed
     let prev = textureSample(prev_frame, prev_sampler, feedback_uv);
-    let decay = 0.94 + u.amplitude * 0.03;
-    var col = prev.rgb * decay;
+    let decay = 0.88 + u.amplitude * 0.04;
+    // Re-saturate the feedback: push colors away from grey
+    var fb = prev.rgb * decay;
+    let fb_luma = dot(fb, vec3<f32>(0.299, 0.587, 0.114));
+    fb = mix(vec3<f32>(fb_luma), fb, 1.3); // boost saturation of trails
+    var col = max(fb, vec3<f32>(0.0));
 
-    // === New acid content ===
+    // === Acid patterns — bold, not subtle ===
 
-    // Multi-layer domain warping for the acid pattern
-    let wp1 = warp(p * 3.0, t * 0.5, 1.0 + u.bass * 0.5);
-    let wp2 = warp(p * 1.5, t * 0.3 + 100.0, 0.8 + u.mid * 0.3);
+    // Domain warp the coordinate space hard
+    let wp1 = warp(p * 3.0, t * 0.5, 1.2 + u.bass * 0.8);
+    let wp2 = warp(p * 1.5, t * 0.3 + 100.0, 1.0 + u.mid * 0.5);
 
     let pattern1 = noise(wp1 * 2.0 + t * 0.2);
     let pattern2 = noise(wp2 * 3.0 - t * 0.15);
     let combined = pattern1 * 0.6 + pattern2 * 0.4;
 
-    // Sharp contour lines — the "acid" look
-    let contour = abs(fract(combined * 4.0 + t * 0.05) - 0.5) * 2.0;
-    let line = smoothstep(0.05, 0.0, contour - 0.45);
+    // Sharp contour lines — thick, vivid
+    let contour = abs(fract(combined * 5.0 + t * 0.06) - 0.5) * 2.0;
+    let line = smoothstep(0.08, 0.0, contour - 0.4);
 
-    // Color: cycle through acid palette
-    let hue = fract(combined * 0.5 + t * 0.03 + u.mid * 0.2);
+    // Color: full-saturation acid palette
+    let hue = fract(combined * 0.5 + t * 0.03 + u.mid * 0.3);
     let acid_col = acid_palette(hue);
 
-    // Add contour lines with audio brightness
-    let line_brightness = line * (0.15 + u.amplitude * 0.4 + u.onset * 0.3);
+    // Draw lines BRIGHT — this is acid, not watercolor
+    let line_brightness = line * (0.4 + u.amplitude * 0.6 + u.onset * 0.4);
     col += acid_col * line_brightness;
 
+    // Filled regions between contours — low-key color wash
+    let fill = smoothstep(0.3, 0.5, combined) * 0.15;
+    col += acid_col * fill * (0.5 + u.amplitude * 0.5);
+
     // Onset: inject bright blobs
-    if u.onset > 0.3 {
+    if u.onset > 0.2 {
         let blob_pos = warp(p, t * 2.0, 0.5);
-        let blob = exp(-length(blob_pos) * 3.0) * u.onset;
-        col += acid_col * blob * 0.4;
+        let blob = exp(-length(blob_pos) * 2.5) * u.onset;
+        col += acid_col * blob * 0.6;
     }
 
     // Sub-bass: deep pulsing glow from center
-    let center_glow = exp(-length(p) * 1.5) * u.sub_bass * 0.15;
-    col += vec3<f32>(0.2, 0.0, 0.3) * center_glow;
+    let center_glow = exp(-length(p) * 1.2) * u.sub_bass * 0.25;
+    col += vec3<f32>(0.3, 0.0, 0.4) * center_glow;
 
     // Presence: sparkle overlay
     let spark = step(0.98, hash(floor(p * 40.0) + floor(t * 5.0)));

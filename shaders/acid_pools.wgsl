@@ -114,32 +114,43 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let detail_hue = fract(v2.z + t * 0.03 + u.high * 0.2);
     let detail = acid_hsv(detail_hue, 0.6, 0.3) * (1.0 - smoothstep(0.0, 0.2, v2.x));
 
-    // Background: very dark with sub-bass glow
-    var col = vec3<f32>(0.01, 0.01, 0.02);
-    col += vec3<f32>(0.05, 0.0, 0.08) * u.sub_bass * 0.5;
+    // Background: deep dark liquid
+    var col = vec3<f32>(0.01, 0.005, 0.02);
+    col += vec3<f32>(0.06, 0.0, 0.1) * u.sub_bass * 0.5;
 
-    // Pool interiors
-    col = mix(col, cell_col, pool_inner * 0.8);
+    // Pool interiors — liquid gradient from edge to center
+    let liquid_depth = smoothstep(0.3, 0.0, v1.x); // 1 at center, 0 at edge
+    let dark_cell = cell_col * 0.3; // deep version
+    let bright_cell = cell_col * 1.2; // bright surface
+    let pool_col = mix(dark_cell, bright_cell, liquid_depth);
+    col = mix(col, pool_col, pool_inner);
 
-    // Detail layer
-    col += detail * 0.3 * pool_inner;
+    // Surface highlight — liquid reflection near top of each pool
+    let highlight_y = p.y * 0.3 + 0.2; // fake light from above
+    let surface_spec = smoothstep(0.15, 0.05, v1.x) * smoothstep(0.0, 0.3, highlight_y);
+    col += vec3<f32>(0.4, 0.5, 0.4) * surface_spec * pool_inner * 0.3;
 
-    // Membrane edges — bright neon
-    let membrane_col = acid_hsv(fract(cell_hue + 0.5), 1.0, 1.0);
-    col += membrane_col * membrane_line * (0.3 + u.onset * 0.5);
+    // Detail layer bleeds across — liquid, not geometric
+    col += detail * 0.2;
 
-    // Bubbles: onset makes cells "pop" with brightness
-    let pop = smoothstep(0.3, 0.8, u.onset) * pool_inner;
-    col += vec3<f32>(0.5, 0.5, 0.3) * pop * 0.3;
+    // Membrane edges — soft glow, not hard lines
+    let membrane_col = acid_hsv(fract(cell_hue + 0.5), 0.9, 0.8);
+    let soft_membrane = exp(-edge_dist * 20.0) * 0.5; // exponential glow, not step
+    col += membrane_col * soft_membrane * (0.2 + u.onset * 0.4 + u.amplitude * 0.2);
 
-    // Beat pulse
-    col *= 1.0 + u.beat * 0.1;
+    // Bubbles: onset makes pools brighten and bulge
+    let pop = smoothstep(0.2, 0.7, u.onset) * liquid_depth;
+    col += bright_cell * pop * 0.4;
 
-    // Inner glow per pool
-    let inner_glow = exp(-v1.x * 6.0) * pool_inner * u.amplitude * 0.3;
-    col += cell_col * inner_glow;
+    // Beat: liquid ripple (modulate the depth gradient)
+    col *= 1.0 + u.beat * 0.08;
 
-    // Scanlines for CRT feel
+    // Inner caustic pattern — the liquid refraction look
+    let caustic = noise(vec2<f32>(v1.z * 10.0 + t * 0.3, v1.x * 8.0 + t * 0.2));
+    let caustic_line = smoothstep(0.45, 0.55, caustic) * liquid_depth;
+    col += cell_col * caustic_line * 0.15 * (0.5 + u.mid * 0.5);
+
+    // Scanlines
     let scan = 0.95 + 0.05 * sin(uv.y * u.resolution.y * 3.14159);
     col *= scan;
 
