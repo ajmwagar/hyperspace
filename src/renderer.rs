@@ -70,7 +70,8 @@ pub struct Renderer {
     pub dummy_texture_view: wgpu::TextureView,
     pub blit_pipeline: wgpu::RenderPipeline,
     pub blit_bind_group_layout: wgpu::BindGroupLayout,
-    pub overlay_pipeline: wgpu::RenderPipeline, // same shader as blit but with alpha blending
+    pub overlay_pipeline: wgpu::RenderPipeline,
+    pub is_bgra: bool, // true if surface format is Bgra8 (macOS Metal)
     pub pipelines: Vec<ShaderPipeline>,
 }
 
@@ -359,8 +360,21 @@ impl Renderer {
             blit_pipeline,
             blit_bind_group_layout,
             overlay_pipeline,
+            is_bgra: surface_format == wgpu::TextureFormat::Bgra8UnormSrgb || surface_format == wgpu::TextureFormat::Bgra8Unorm,
             pipelines: Vec::new(),
         })
+    }
+
+    /// Convert RGBA pixels to BGRA if the surface format requires it.
+    fn rgba_to_surface_format(&self, pixels: &[u8]) -> Vec<u8> {
+        if !self.is_bgra {
+            return pixels.to_vec();
+        }
+        let mut out = pixels.to_vec();
+        for chunk in out.chunks_exact_mut(4) {
+            chunk.swap(0, 2);
+        }
+        out
     }
 
     fn create_feedback_texture(&self, label: &str) -> (wgpu::Texture, wgpu::TextureView) {
@@ -770,10 +784,11 @@ impl Renderer {
                 frame_a.rgba.clone()
             };
 
-            // Upload to the feedback texture (already vflipped by ffmpeg)
+            // Upload to the feedback texture (convert RGBA→BGRA if needed)
             let target_idx = fb.result_idx;
             let w = current_video.width;
             let h = current_video.height;
+            let upload_pixels = self.rgba_to_surface_format(&pixels);
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &fb.textures[target_idx],
@@ -781,7 +796,7 @@ impl Renderer {
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                &pixels,
+                &upload_pixels,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(4 * w),
@@ -801,9 +816,10 @@ impl Renderer {
                 }
                 let frame_idx = vid.data.frame_at(time);
                 let frame = &vid.data.frames[frame_idx];
+                let upload_pixels = self.rgba_to_surface_format(&frame.rgba);
                 self.queue.write_texture(
                     vid.texture.as_image_copy(),
-                    &frame.rgba,
+                    &upload_pixels,
                     wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(4 * vid.data.width),
