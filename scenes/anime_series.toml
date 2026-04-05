@@ -26,4 +26,4 @@ video_sources = [
     "samples/anime/sunset.gif",
     "samples/anime/crashout.gif",
 ]
-post = ["shaders/post/flow_drift.wgsl", "shaders/post/colormap_acid.wgsl"]
+post = ["shaders/post/flow_gentle.wgsl", "shaders/post/colormap_warm.wgsl"]
