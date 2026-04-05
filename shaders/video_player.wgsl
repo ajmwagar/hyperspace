@@ -55,18 +55,32 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var uv = in.uv;
 
-    // Subtle beat-driven zoom pulse
-    let zoom = 1.0 - u.beat * 0.02;
+    // Beat-driven zoom punch — visible but not disorienting
+    let zoom = 1.0 - u.beat * 0.04 - u.bass * 0.02;
     uv = (uv - 0.5) * zoom + 0.5;
+
+    // Bass shake — tiny offset that makes it feel physical
+    let shake_x = u.bass * 0.003 * sin(u.time * 40.0);
+    let shake_y = u.bass * 0.002 * cos(u.time * 35.0);
+    uv += vec2<f32>(shake_x, shake_y);
 
     // Sample video frame
     var col = textureSample(prev_frame, prev_sampler, uv).rgb;
 
-    // Audio-reactive brightness
-    col *= 0.8 + u.amplitude * 0.4 + u.sub_bass * 0.2;
+    // Audio-reactive brightness: bass dims slightly (contrast), onset brightens
+    col *= 0.85 + u.amplitude * 0.3;
 
-    // Beat flash
-    col += vec3<f32>(0.05, 0.03, 0.02) * u.beat * 0.3 + u.onset * 0.2;
+    // Beat: brief brightness pump + slight warm shift
+    let beat_pump = u.beat * 0.15;
+    col *= 1.0 + beat_pump;
+    col += vec3<f32>(0.04, 0.02, 0.01) * u.beat * 0.4;
+
+    // Onset: quick flash on transients
+    col += vec3<f32>(0.06, 0.05, 0.04) * u.onset * 0.3;
+
+    // Bass: subtle saturation boost on hits (colors pop on kick)
+    let luma = dot(col, vec3<f32>(0.299, 0.587, 0.114));
+    col = mix(vec3<f32>(luma), col, 1.0 + u.bass * 0.15);
 
     // Subtle scanlines for CRT feel
     let scan = 0.96 + 0.04 * sin(in.uv.y * u.resolution.y * 3.14159);
