@@ -1,0 +1,24 @@
+# Anime Series — loops through anime GIFs with effects.
+
+[audio]
+device = "Blackhole 2ch"
+channels = "0,1"
+
+[center]
+shader = "shaders/video_player.wgsl"
+video_speed = 0.5
+video_sources = [
+    "samples/anime/akira_slide.gif",
+    "samples/anime/ae86.gif",
+    "samples/anime/initial-d-keisuke.gif",
+    "samples/anime/drift.gif",
+    "samples/anime/drift2.gif",
+    "samples/anime/cruise.gif",
+    "samples/anime/runner.gif",
+    "samples/anime/evangelion.gif",
+    "samples/anime/eyes.gif",
+    "samples/anime/halo.gif",
+    "samples/anime/sunset.gif",
+    "samples/anime/crashout.gif",
+]
+post = ["shaders/post/flow_drift.wgsl", "shaders/post/colormap_acid.wgsl"]
