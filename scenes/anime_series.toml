@@ -6,18 +6,23 @@ channels = "0,1"
 
 [center]
 shader = "shaders/video_player.wgsl"
-video_speed = 0.5
+video_speed = 0.75
 video_sources = [
     "samples/anime/akira_slide.gif",
     "samples/anime/ae86.gif",
     "samples/anime/initial-d-keisuke.gif",
     "samples/anime/drift.gif",
     "samples/anime/drift2.gif",
+    "samples/anime/bebop.gif",
+    "samples/anime/cowboy.gif",
     "samples/anime/cruise.gif",
     "samples/anime/runner.gif",
     "samples/anime/evangelion.gif",
+    "samples/anime/boom.gif",
     "samples/anime/eyes.gif",
+    "samples/anime/hair.gif",
     "samples/anime/halo.gif",
+    "samples/anime/onepiece_spin.gif",
     "samples/anime/sunset.gif",
     "samples/anime/crashout.gif",
 ]
