@@ -1,6 +1,6 @@
 [audio]
-device = "Scarlett"
-channels = "4,5"
+device = "Blackhole 2ch"
+channels = "0,1"
 
 [center]
 shader = "shaders/plasma_vortex.wgsl"

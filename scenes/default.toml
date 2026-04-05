@@ -1,6 +1,6 @@
 [audio]
-device = "Scarlett"
-channels = "4,5"  # Loopback L/R (outputs 1-2 mirrored back)
+device = "Blackhole 2ch"
+channels = "0,1"  # Loopback L/R (outputs 1-2 mirrored back)
 
 [center]
 shader = "shaders/hyperspace_tunnel.wgsl"

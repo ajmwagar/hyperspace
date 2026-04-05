@@ -6,7 +6,7 @@
 # Start with any scene, press letter keys to switch clips instantly.
 
 [audio]
-#device = "Scarlett"
+# device = "Scarlett"
 #channels = "4,5"
 device = "Blackhole 2ch"
 channels = "0,1"

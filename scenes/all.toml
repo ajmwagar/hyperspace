@@ -5,8 +5,8 @@
 [audio]
 # device = "Scarlett"
 # channels = "4,5"
-device = "Blue Snowball"
-channels = "0"
+device = "Blackhole 2ch"
+channels = "0,1"
 
 [grid_0]
 shader = "shaders/hyperspace_tunnel.wgsl"

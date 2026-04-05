@@ -2,8 +2,8 @@
 # Same shaders, different feel through flow fields and colormaps.
 
 [audio]
-device = "Scarlett"
-channels = "4,5"
+device = "Blackhole 2ch"
+channels = "0,1"
 
 [center]
 shader = "shaders/oscilloscope.wgsl"

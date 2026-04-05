@@ -3,8 +3,8 @@
 # Start with silence or a drone and watch it grow.
 
 [audio]
-device = "Blue Snowball"
-channels = "0"
+device = "Blackhole 2ch"
+channels = "0,1"
 
 [center]
 shader = "shaders/ambient_nebula.wgsl"
