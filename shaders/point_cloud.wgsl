@@ -1,9 +1,7 @@
-// Point Cloud — renders video/image content as scattered luminous particles.
-// Quiet: points coalesce into the source image like a ghost materializing.
-// Audio: bass scatters points outward, onset explodes them, presence sparkles.
-// Looks like a holographic ghost of the source content.
-//
-// Uses prev_frame for video content (pair with video_player sources).
+// Point Cloud — renders video content as scattered luminous particles.
+// Quiet: dense points reconstruct the source image clearly.
+// Audio: particles scatter, explode, and drift apart.
+// Uses prev_frame for video content.
 
 struct Uniforms {
     time: f32,
@@ -66,91 +64,90 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
     let t = u.time;
 
-    // Point grid density — more points = more defined image
-    let density = 80.0 + u.amplitude * 20.0; // 80-100 points per axis
+    // Dense grid — enough points to clearly read the image
+    let density = 200.0;
     let cell = floor(uv * density);
     let cell_uv = fract(uv * density);
     let cell_center = (cell + 0.5) / density;
 
-    // Sample the source image at this grid point
+    // Sample the source at this grid point
     let src = textureSample(prev_frame, prev_sampler, cell_center);
     let brightness = dot(src.rgb, vec3<f32>(0.299, 0.587, 0.114));
 
-    // Only show points where there's content (brightness threshold)
-    // More audio = lower threshold = more points visible
-    let threshold = 0.08 - u.amplitude * 0.05;
-    if brightness < threshold {
-        // Dark areas: show faint background
-        return vec4<f32>(0.005, 0.005, 0.01, 1.0);
-    }
+    // Per-point random seed
+    let seed = hash2(cell);
+    let seed1 = hash1(cell);
 
-    // === Point displacement ===
-    let point_seed = hash2(cell);
+    // === Displacement: scales with audio ===
+    // When quiet, displacement is near zero → image is clear
+    let scatter_strength = u.bass * 0.12 + u.onset * 0.08 + u.amplitude * 0.02;
 
-    // Bass: radial scatter from center
-    let to_center = cell_center - 0.5;
-    let bass_scatter = to_center * u.bass * 0.08;
+    // Radial scatter from center on bass
+    let to_center = (cell_center - 0.5) * 2.0;
+    let radial = to_center * u.bass * 0.06;
 
-    // Onset: explosive random scatter
-    let onset_scatter = point_seed * u.onset * 0.04;
+    // Random scatter on onset
+    let random_scatter = seed * u.onset * 0.05;
 
-    // Sub-bass: slow drift/breathing
-    let sub_drift = vec2<f32>(
-        sin(t * 0.3 + point_seed.x * 6.283) * u.sub_bass * 0.01,
-        cos(t * 0.25 + point_seed.y * 6.283) * u.sub_bass * 0.01
+    // Gentle drift on sub-bass
+    let drift = vec2<f32>(
+        sin(t * 0.4 + seed.x * 6.28) * u.sub_bass * 0.008,
+        cos(t * 0.35 + seed.y * 6.28) * u.sub_bass * 0.008
     );
 
-    // High: jitter/vibration
-    let jitter = hash2(cell + floor(t * 15.0)) * u.high * 0.008;
+    // Jitter on highs
+    let jitter = hash2(cell + floor(t * 20.0)) * u.high * 0.005;
 
-    // Total displacement
-    let displacement = bass_scatter + onset_scatter + sub_drift + jitter;
+    let total_disp = (radial + random_scatter + drift + jitter) * density;
 
-    // Displaced point position within the cell
-    let displaced_center = vec2<f32>(0.5) + displacement * density;
+    // Displaced point position within cell
+    let point_pos = vec2<f32>(0.5) + total_disp;
+    let dist = length(cell_uv - point_pos);
 
-    // Distance from pixel to the displaced point center
-    let dist = length(cell_uv - displaced_center);
+    // === Point size ===
+    // Quiet: large points that nearly touch → reads as solid image
+    // Loud: smaller points with gaps → reads as particles
+    let quiet_size = 0.48; // nearly fills the cell when quiet
+    let loud_size = 0.15;
+    let point_size = mix(quiet_size, loud_size, scatter_strength);
 
-    // Point size: brighter source = larger point, bass makes all points bigger
-    let base_size = 0.15 + brightness * 0.2 + u.bass * 0.08;
-    let point = smoothstep(base_size, base_size * 0.3, dist);
+    let point = smoothstep(point_size, point_size * 0.4, dist);
 
-    if point < 0.01 {
-        return vec4<f32>(0.005, 0.005, 0.01, 1.0);
+    // Skip empty points
+    if point < 0.01 && brightness < 0.05 {
+        return vec4<f32>(0.005, 0.005, 0.015, 1.0);
     }
 
-    // === Point color ===
-    // Ghost tint: source color with ethereal blue-white shift
-    let ghost_tint = vec3<f32>(0.4, 0.5, 0.7); // cool ethereal
-    var point_col = mix(src.rgb, ghost_tint, 0.3 - brightness * 0.2);
+    // === Color ===
+    // Mostly source color, with ethereal tint at edges
+    var col = src.rgb;
 
-    // Brighter points are more white (hot core)
-    point_col = mix(point_col, vec3<f32>(0.9, 0.95, 1.0), brightness * brightness * 0.5);
+    // Edge particles get a ghostly blue-white shift
+    let edge_tint = 1.0 - point; // stronger at point edges
+    col = mix(col, col + vec3<f32>(0.05, 0.08, 0.15), edge_tint * 0.3);
 
-    // Audio color shifts
-    point_col += vec3<f32>(0.1, 0.0, 0.05) * u.bass; // warm on bass
-    point_col += vec3<f32>(0.0, 0.05, 0.1) * u.presence; // cool on presence
+    // Bass: warm push
+    col += vec3<f32>(0.06, 0.02, 0.0) * u.bass;
 
-    // Beat: all points flash brighter
-    point_col *= 1.0 + u.beat * 0.3;
+    // Beat flash
+    col *= 1.0 + u.beat * 0.2;
 
-    // Onset: flash to white briefly
-    point_col = mix(point_col, vec3<f32>(1.0), u.onset * 0.2);
+    // Onset: bright flash
+    col = mix(col, vec3<f32>(0.9, 0.92, 1.0), u.onset * 0.15);
 
-    // Apply point shape
-    var col = point_col * point;
+    // Apply point mask
+    col *= point;
 
-    // Point glow (soft halo around each point)
-    let glow = exp(-dist * dist * 60.0) * 0.15 * brightness;
-    col += point_col * glow;
+    // Soft glow around each point
+    let glow = exp(-dist * dist * 40.0) * 0.08 * brightness;
+    col += src.rgb * glow;
 
-    // Presence sparkle: random extra-bright points
-    let sparkle = step(0.98, hash1(cell + floor(t * 8.0))) * u.presence;
-    col += vec3<f32>(0.8, 0.9, 1.0) * sparkle * 0.5;
+    // Sparkle on presence
+    let sparkle = step(0.985, hash1(cell + floor(t * 10.0)));
+    col += vec3<f32>(0.6, 0.7, 0.9) * sparkle * u.presence * 0.4;
 
-    // Background: near-black
-    col = max(col, vec3<f32>(0.005, 0.005, 0.01));
+    // Floor
+    col = max(col, vec3<f32>(0.005, 0.005, 0.015));
 
     return vec4<f32>(col, 1.0);
 }
