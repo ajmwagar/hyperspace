@@ -1,0 +1,22 @@
+# Ghost — point cloud visualization of video content.
+# Looks like a holographic ghost of the source footage.
+# Quiet: particles coalesce into the image.
+# Loud: particles scatter and explode.
+
+[audio]
+device = "Blackhole 2ch"
+channels = "0,1"
+
+[center]
+shader = "shaders/point_cloud.wgsl"
+video_speed = 0.6
+video_sources = [
+    "samples/anime/akira_slide.gif",
+    "samples/anime/evangelion.gif",
+    "samples/anime/runner.gif",
+    "samples/anime/eyes.gif",
+    "samples/anime/bebop.gif",
+    "samples/anime/cowboy.gif",
+    "samples/anime/halo.gif",
+    "samples/anime/sunset.gif",
+]
