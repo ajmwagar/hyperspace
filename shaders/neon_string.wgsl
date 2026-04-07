@@ -74,12 +74,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Base curve: gentle sine that breathes slowly
         let base_bend = sin(p.x * 1.5 + t * 0.3 + si * 0.5) * 0.03;
 
-        // Waveform displacement: the actual audio shapes the string
+        // Waveform displacement: smoothly interpolated for clean curves
         let sample_x = clamp(uv.x, 0.0, 1.0);
-        let wave_idx = u32(sample_x * 511.0);
-        let wave = get_waveform(wave_idx);
+        let wave_pos = sample_x * 510.0;
+        let idx0 = u32(floor(wave_pos));
+        let idx1 = min(idx0 + 1u, 511u);
+        let frac = fract(wave_pos);
+        // Cubic hermite interpolation for extra smoothness
+        let w0 = get_waveform(idx0);
+        let w1 = get_waveform(idx1);
+        let w_prev = get_waveform(max(idx0, 1u) - 1u);
+        let w_next = get_waveform(min(idx1 + 1u, 511u));
+        let t0 = (w1 - w_prev) * 0.5;
+        let t1 = (w_next - w0) * 0.5;
+        let f2 = frac * frac;
+        let f3 = f2 * frac;
+        let wave = w0 * (2.0*f3 - 3.0*f2 + 1.0) + t0 * (f3 - 2.0*f2 + frac)
+                 + w1 * (-2.0*f3 + 3.0*f2) + t1 * (f3 - f2);
 
-        // The waveform drives the vertical displacement
         // Scale by amplitude so silence = flat, loud = wild
         let wave_displacement = wave * (0.15 + u.amplitude * 0.25);
 
