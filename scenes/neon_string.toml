@@ -1,0 +1,9 @@
+# Neon String — dark background with vibrating rainbow strings.
+# Perfect for guitar, reverb, atmospheric playing.
+
+[audio]
+device = "Blackhole 2ch"
+channels = "0,1"
+
+[center]
+shader = "shaders/neon_string.wgsl"
