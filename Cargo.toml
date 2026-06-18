@@ -21,13 +21,19 @@ mlua = { version = "0.10", features = ["lua54", "vendored"] }
 image = "0.25"
 serde_json = "1"
 gif = { version = "0.13", optional = true }
+hound = { version = "3", optional = true }
 
 [features]
 capture = ["gif"]
+render = ["hound"]
 
 [[example]]
 name = "capture"
 required-features = ["capture"]
+
+[[example]]
+name = "render"
+required-features = ["render"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rppal = "0.22"

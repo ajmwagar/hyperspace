@@ -194,6 +194,26 @@ cargo run --example capture --features capture
 # Renders 60 frames of each shader to assets/*.gif
 ```
 
+### Offline render (wav → mp4)
+
+Render a visualizer mp4 from an audio file, driven by that audio. Runs the
+real scene (main shader + post chain) in a headless offscreen loop and muxes
+the original audio into the output. Requires `ffmpeg` on PATH.
+
+```sh
+cargo run --release --features render --example render -- <input.wav> <output.mp4> [scene.toml] [fps]
+# Defaults: scene = scenes/composed.toml, fps = 30, resolution = 1280x720
+# e.g.
+cargo run --release --features render --example render -- song.wav song.mp4
+```
+
+Decodes wav via `hound` (f32 or int PCM, mono or stereo; mono is duplicated to
+L/R). Each frame's audio buffer is computed from the sample window at that
+frame's timestamp — FFT spectrum (log-scaled, matching `src/audio.rs`) plus the
+raw L/R waveform — and uploaded to the same `[0..512)=spectrum,
+[512..1024)=wave L, [1024..1536)=wave R` buffer the live engine uses. The output
+mp4 contains both a video and an audio stream.
+
 ## Stack
 
 Rust, wgpu, WGSL, winit, cpal, rustfft, mlua (Lua 5.4), rppal (Pi GPIO/SPI).
