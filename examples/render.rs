@@ -252,9 +252,9 @@ async fn run(input: &str, output: &str, scene_path: &str, fps: u32, width: u32, 
             ..Default::default()
         })
         .await
-        .ok_or_else(|| anyhow::anyhow!("no GPU adapter"))?;
+        .map_err(|_| anyhow::anyhow!("no GPU adapter"))?;
     let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default(), None)
+        .request_device(&wgpu::DeviceDescriptor::default())
         .await?;
 
     // Render in non-srgb RGBA so the bytes we read back are exactly what we
@@ -389,7 +389,7 @@ async fn run(input: &str, output: &str, scene_path: &str, fps: u32, width: u32, 
         let slice = readback.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-        device.poll(wgpu::Maintain::Wait);
+        device.poll(wgpu::PollType::Wait).unwrap();
         rx.recv().unwrap().unwrap();
         {
             let data = slice.get_mapped_range();

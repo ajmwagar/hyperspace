@@ -6,7 +6,7 @@ license = "AGPL-3.0-or-later"
 description = "Audio-reactive video synthesis engine for CRT displays"
 
 [dependencies]
-wgpu = "24"
+wgpu = "25"
 winit = "0.30"
 cpal = "0.15"
 rustfft = "6"

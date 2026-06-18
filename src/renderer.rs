@@ -121,7 +121,7 @@ impl Renderer {
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or_else(|| anyhow::anyhow!("no suitable GPU adapter found"))?;
+            .map_err(|_| anyhow::anyhow!("no suitable GPU adapter found"))?;
 
         log::info!("GPU adapter: {:?}", adapter.get_info().name);
 
@@ -133,7 +133,6 @@ impl Renderer {
                     required_limits: wgpu::Limits::default(),
                     ..Default::default()
                 },
-                None,
             )
             .await?;
 
