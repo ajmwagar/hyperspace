@@ -3,7 +3,7 @@
 # so the pedal audibly engages at the midpoint. Lower-third center labels,
 # time-gated per segment, clean cut. Renders through the hyperspace scope.
 #
-# Usage: scripts/ab_clickon.sh CLEAN.wav "Clean Label" FX.wav "FX Label" OUT.mp4 [split_seconds]
+# Usage: scripts/ab_clickon.sh CLEAN.wav "Clean Label" FX.wav "FX Label" OUT.mp4 [split_seconds] [resolution: 16:9|4:5|1:1|9:16|WxH]
 set -euo pipefail
 
 CLEAN="${1:?clean wav}"; CLABEL="${2:?clean label}"
@@ -16,6 +16,7 @@ HS="$(cd "$(dirname "$0")/.." && pwd)"
 # same-timestamp splice = a continuous performance that "clicks on" at T).
 FXD=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$FX")
 T="${6:-$(awk "BEGIN{printf \"%.3f\", $FXD/2}")}"
+RES="${7:-16:9}"
 
 STITCH=$(mktemp /tmp/ab_stitch.XXXX.wav)
 BASE=$(mktemp /tmp/ab_base.XXXX.mp4)
@@ -27,14 +28,18 @@ ffmpeg -y -v error -i "$CLEAN" -i "$FX" -filter_complex \
    [a][b]concat=n=2:v=0:a=1[o]" -map "[o]" "$STITCH"
 
 # 2) Render the spliced audio through the hyperspace oscilloscope scene.
-( cd "$HS" && cargo run --release --features render --example render -- "$STITCH" "$BASE" >/dev/null 2>&1 )
+( cd "$HS" && cargo run --release --features render --example render -- "$STITCH" "$BASE" scenes/composed.toml 30 "$RES" >/dev/null 2>&1 )
 
 # 3) Per-segment text overlay (lower-third center, color-coded, time-gated).
 FONT=$(for c in /System/Library/Fonts/Supplemental/Arial.ttf /System/Library/Fonts/Helvetica.ttc /System/Library/Fonts/SFNS.ttf; do [ -f "$c" ] && echo "$c" && break; done)
 TOT=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$BASE")
+H=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$BASE")
+FS=$(awk "BEGIN{print int($H/15)}")    # label size scales with frame height
+YOFF=$(awk "BEGIN{print int($H/11)}")  # lower-third offset from bottom
+BW=$(awk "BEGIN{print int($FS/3)}")    # box border padding
 ffmpeg -y -v error -i "$BASE" -vf \
-  "drawtext=fontfile=$FONT:text='$CLABEL':fontsize=52:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=16:x=(w-text_w)/2:y=h-text_h-60:enable='between(t,0,$T)',\
-   drawtext=fontfile=$FONT:text='$FLABEL':fontsize=52:fontcolor=0xFF7A1A:box=1:boxcolor=black@0.5:boxborderw=16:x=(w-text_w)/2:y=h-text_h-60:enable='between(t,$T,$TOT)'" \
+  "drawtext=fontfile=$FONT:text='$CLABEL':fontsize=$FS:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=$BW:x=(w-text_w)/2:y=h-text_h-$YOFF:enable='between(t,0,$T)',\
+   drawtext=fontfile=$FONT:text='$FLABEL':fontsize=$FS:fontcolor=0xFF7A1A:box=1:boxcolor=black@0.5:boxborderw=$BW:x=(w-text_w)/2:y=h-text_h-$YOFF:enable='between(t,$T,$TOT)'" \
   -c:a copy "$OUT"
 
 rm -f "$STITCH" "$BASE"

@@ -34,20 +34,35 @@ use std::sync::Arc;
 use uniforms::Uniforms;
 use wgpu::util::DeviceExt;
 
-const WIDTH: u32 = 1280;
-const HEIGHT: u32 = 720;
 const FFT_SIZE: usize = 1024; // matches src/audio.rs
 const WAVEFORM_SIZE: usize = 512;
 const SPECTRUM_SIZE: usize = 512;
 const AUDIO_BUFFER_SIZE: usize = SPECTRUM_SIZE + WAVEFORM_SIZE * 2; // 1536
 const STATE_BUFFER_SIZE: usize = 16384; // matches scripting::STATE_BUFFER_SIZE upper bound
 
+/// Parse a resolution preset ("16:9", "4:5", "1:1", "9:16") or explicit "WxH".
+fn parse_resolution(s: &str) -> (u32, u32) {
+    match s {
+        "16:9" => (1280, 720),
+        "4:5" => (1080, 1350),
+        "1:1" => (1080, 1080),
+        "9:16" => (1080, 1920),
+        other => other
+            .split_once('x')
+            .and_then(|(w, h)| Some((w.trim().parse().ok()?, h.trim().parse().ok()?)))
+            .unwrap_or_else(|| {
+                eprintln!("unrecognized resolution '{}', using 1280x720", other);
+                (1280, 720)
+            }),
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
         eprintln!(
-            "usage: {} <input.wav> <output.mp4> [scene.toml] [fps]",
+            "usage: {} <input.wav> <output.mp4> [scene.toml] [fps] [resolution: 16:9|4:5|1:1|9:16|WxH]",
             args[0]
         );
         std::process::exit(2);
@@ -59,8 +74,12 @@ fn main() -> anyhow::Result<()> {
         .cloned()
         .unwrap_or_else(|| "scenes/composed.toml".to_string());
     let fps: u32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(30);
+    let (width, height) = args
+        .get(5)
+        .map(|s| parse_resolution(s))
+        .unwrap_or((1280, 720));
 
-    pollster::block_on(run(&input, &output, &scene_path, fps))
+    pollster::block_on(run(&input, &output, &scene_path, fps, width, height))
 }
 
 /// Decoded audio: interleaved-free L/R sample vectors + sample rate.
@@ -199,7 +218,7 @@ struct Pipeline {
     result_idx: usize,
 }
 
-async fn run(input: &str, output: &str, scene_path: &str, fps: u32) -> anyhow::Result<()> {
+async fn run(input: &str, output: &str, scene_path: &str, fps: u32, width: u32, height: u32) -> anyhow::Result<()> {
     // ---- decode audio ----
     let audio = decode_wav(input)?;
     let total_samples = audio.left.len();
@@ -255,7 +274,7 @@ async fn run(input: &str, output: &str, scene_path: &str, fps: u32) -> anyhow::R
     let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("uniforms"),
         contents: bytemuck::bytes_of(&Uniforms {
-            resolution: [WIDTH as f32, HEIGHT as f32],
+            resolution: [width as f32, height as f32],
             ..Uniforms::default()
         }),
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -268,13 +287,13 @@ async fn run(input: &str, output: &str, scene_path: &str, fps: u32) -> anyhow::R
         mapped_at_creation: false,
     });
 
-    let pipeline = build_pipeline(&device, &queue, format, &bgl, &vp)?;
+    let pipeline = build_pipeline(&device, &queue, format, &bgl, &vp, width, height)?;
 
     // ---- readback buffer ----
-    let bytes_per_row = align_to(WIDTH * 4, 256);
+    let bytes_per_row = align_to(width * 4, 256);
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("readback"),
-        size: (bytes_per_row * HEIGHT) as u64,
+        size: (bytes_per_row * height) as u64,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -285,7 +304,7 @@ async fn run(input: &str, output: &str, scene_path: &str, fps: u32) -> anyhow::R
             "-y",
             "-f", "rawvideo",
             "-pix_fmt", "rgba",
-            "-s", &format!("{}x{}", WIDTH, HEIGHT),
+            "-s", &format!("{}x{}", width, height),
             "-r", &fps.to_string(),
             "-i", "-",
             "-i", input,
@@ -324,7 +343,7 @@ async fn run(input: &str, output: &str, scene_path: &str, fps: u32) -> anyhow::R
         let u = Uniforms {
             time,
             delta_time: 1.0 / fps as f32,
-            resolution: [WIDTH as f32, HEIGHT as f32],
+            resolution: [width as f32, height as f32],
             amplitude,
             bass,
             mid,
@@ -355,12 +374,12 @@ async fn run(input: &str, output: &str, scene_path: &str, fps: u32) -> anyhow::R
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(bytes_per_row),
-                    rows_per_image: Some(HEIGHT),
+                    rows_per_image: Some(height),
                 },
             },
             wgpu::Extent3d {
-                width: WIDTH,
-                height: HEIGHT,
+                width: width,
+                height: height,
                 depth_or_array_layers: 1,
             },
         );
@@ -374,8 +393,8 @@ async fn run(input: &str, output: &str, scene_path: &str, fps: u32) -> anyhow::R
         rx.recv().unwrap().unwrap();
         {
             let data = slice.get_mapped_range();
-            let row_bytes = (WIDTH * 4) as usize;
-            for row in 0..HEIGHT as usize {
+            let row_bytes = (width * 4) as usize;
+            for row in 0..height as usize {
                 let src = row * bytes_per_row as usize;
                 ffmpeg_in.write_all(&data[src..src + row_bytes])?;
             }
@@ -481,6 +500,8 @@ fn build_pipeline(
     format: wgpu::TextureFormat,
     bgl: &wgpu::BindGroupLayout,
     vp: &scene::Viewport,
+    width: u32,
+    height: u32,
 ) -> anyhow::Result<Pipeline> {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
@@ -530,7 +551,7 @@ fn build_pipeline(
     let tex = |label: &str| {
         device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
-            size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d { width: width, height: height, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
