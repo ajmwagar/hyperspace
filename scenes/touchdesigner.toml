@@ -32,7 +32,7 @@ post = ["shaders/post/edge_sobel.wgsl"]
 shader = "shaders/reaction_diffusion.wgsl"
 post = ["shaders/post/chromatic.wgsl"]
 
-# Plasma run through ASCII for a demoscene terminal vibe.
+# Plasma → ASCII → CRT: a demoscene terminal on a real tube.
 [grid_5]
 shader = "shaders/plasma_vortex.wgsl"
-post = ["shaders/post/ascii.wgsl"]
+post = ["shaders/post/ascii.wgsl", "shaders/post/crt.wgsl"]

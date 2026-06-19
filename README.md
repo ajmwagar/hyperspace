@@ -128,6 +128,7 @@ Available post shaders:
 - `post/halftone.wgsl` — rotated CMY dot screen, print/comic look
 - `post/chromatic.wgsl` — radial RGB split + onset glitch (lens/CRT)
 - `post/edge_sobel.wgsl` — Sobel edge detect, neon contours on black
+- `post/crt.wgsl` — CRT tube: barrel curve, aperture mask, scanlines, bloom (best placed last in a chain)
 
 See `scenes/touchdesigner.toml` for a grid that pairs each generator with one of these effects.
 
