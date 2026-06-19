@@ -2,23 +2,42 @@
 
 <table>
 <tr>
+<td><img src="acid_melt.gif" width="200"><br><b>acid_melt</b><br>liquid distortion that melts the screen.</td>
+<td><img src="acid_pools.gif" width="200"><br><b>acid_pools</b><br>Voronoi-based liquid pools that bubble a</td>
+<td><img src="acid_worms.gif" width="200"><br><b>acid_worms</b><br>writhing tendrils of light that react to</td>
+</tr>
+<tr>
+<td><img src="ambient_nebula.gif" width="200"><br><b>ambient_nebula</b><br>grows slowly with the music.</td>
 <td><img src="cellular.gif" width="200"><br><b>cellular</b><br>displays GoL state from Lua script.</td>
 <td><img src="classic_viz.gif" width="200"><br><b>classic_viz</b><br>Winamp / milkdrop-inspired visualizer.</td>
-<td><img src="cyberpunk.gif" width="200"><br><b>cyberpunk</b><br>digital rain, glitch blocks, circuit tra</td>
 </tr>
 <tr>
+<td><img src="cyberpunk.gif" width="200"><br><b>cyberpunk</b><br>digital rain, glitch blocks, circuit tra</td>
 <td><img src="engine_gauges.gif" width="200"><br><b>engine_gauges</b><br>Spectrum analyzer bars with gauge aesthe</td>
 <td><img src="fractal_pulse.gif" width="200"><br><b>fractal_pulse</b><br>Julia set fractal that breathes with aud</td>
-<td><img src="gforce.gif" width="200"><br><b>gforce</b><br>feedback visualizer inspired by SoundSpe</td>
 </tr>
 <tr>
+<td><img src="gforce.gif" width="200"><br><b>gforce</b><br>feedback visualizer inspired by SoundSpe</td>
+<td><img src="gradient_flow.gif" width="200"><br><b>gradient_flow</b><br>ShaderGradient-inspired flowing mesh gra</td>
 <td><img src="hyperdrive.gif" width="200"><br><b>hyperdrive</b><br>Star Wars lightspeed jump. Stars streak </td>
+</tr>
+<tr>
 <td><img src="hyperspace_tunnel.gif" width="200"><br><b>hyperspace_tunnel</b><br></td>
 <td><img src="lava_lamp.gif" width="200"><br><b>lava_lamp</b><br>soft metaball blobs that rise, merge, an</td>
+<td><img src="neon_grid.gif" width="200"><br><b>neon_grid</b><br>retrowave infinite grid with audio-react</td>
 </tr>
 <tr>
-<td><img src="neon_grid.gif" width="200"><br><b>neon_grid</b><br>retrowave infinite grid with audio-react</td>
+<td><img src="neon_string.gif" width="200"><br><b>neon_string</b><br>a single luminous arc that vibrates with</td>
+<td><img src="neural_link.gif" width="200"><br><b>neural_link</b><br>two chrome mannequin busts connected by </td>
 <td><img src="oscilloscope.gif" width="200"><br><b>oscilloscope</b><br>real waveform display with green CRT pho</td>
+</tr>
+<tr>
 <td><img src="plasma_vortex.gif" width="200"><br><b>plasma_vortex</b><br>swirling plasma tendrils that react to a</td>
+<td><img src="point_cloud.gif" width="200"><br><b>point_cloud</b><br>renders video content as scattered lumin</td>
+<td><img src="reaction_diffusion.gif" width="200"><br><b>reaction_diffusion</b><br>Gray-Scott system, a TouchDesigner feedb</td>
+</tr>
+<tr>
+<td><img src="video_player.gif" width="200"><br><b>video_player</b><br>displays video content from prev_frame t</td>
+<td><img src="voronoi_cells.gif" width="200"><br><b>voronoi_cells</b><br>TouchDesigner-style animated Voronoi dia</td>
 </tr>
 </table>

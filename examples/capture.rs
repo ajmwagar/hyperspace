@@ -1,13 +1,13 @@
 //! Headless GIF capture of each shader.
 //! Usage: cargo run --example capture --features capture
 //!
-//! Renders 60 frames of each shader at 256x256 and saves as GIF in assets/.
+//! Renders 60 frames of each shader at 512x512 and saves as GIF in assets/.
 
 use gif::{Encoder, Frame, Repeat};
 use std::fs;
 use wgpu::util::DeviceExt;
 
-const SIZE: u32 = 256;
+const SIZE: u32 = 512;
 const FRAMES: u32 = 60;
 const FRAME_DELAY: u16 = 3; // centiseconds (3 = ~33fps)
 
@@ -354,35 +354,14 @@ async fn run() {
             drop(data);
             readback.unmap();
 
-            // Convert RGBA to GIF frame (drop alpha, quantize)
-            let mut rgb = vec![0u8; (SIZE * SIZE * 3) as usize];
-            for i in 0..(SIZE * SIZE) as usize {
-                rgb[i * 3] = pixels[i * 4];
-                rgb[i * 3 + 1] = pixels[i * 4 + 1];
-                rgb[i * 3 + 2] = pixels[i * 4 + 2];
-            }
-
-            // Simple quantization: use image crate to reduce to 256 colors
-            let img = image::RgbImage::from_raw(SIZE, SIZE, rgb).unwrap();
+            // Quantize to a 256-colour palette with NeuQuant. This handles
+            // smooth gradients and colourful frames far better than a naive
+            // first-256-colours scan (which collapsed extra colours into one).
+            let nq = color_quant::NeuQuant::new(10, 256, &pixels);
+            let palette = nq.color_map_rgb();
             let mut indexed = vec![0u8; (SIZE * SIZE) as usize];
-            let mut palette = vec![0u8; 768]; // 256 * 3
-
-            // Simple palette: just use the first 256 unique colors (good enough for previews)
-            let mut color_map = std::collections::HashMap::new();
-            let mut next_color = 0u8;
-            for (i, pixel) in img.pixels().enumerate() {
-                let key = (pixel[0] >> 2, pixel[1] >> 2, pixel[2] >> 2); // quantize to 6-bit
-                let idx = *color_map.entry(key).or_insert_with(|| {
-                    let c = next_color;
-                    if (c as usize) < 256 {
-                        palette[c as usize * 3] = pixel[0];
-                        palette[c as usize * 3 + 1] = pixel[1];
-                        palette[c as usize * 3 + 2] = pixel[2];
-                        next_color = next_color.saturating_add(1);
-                    }
-                    c
-                });
-                indexed[i] = idx;
+            for i in 0..(SIZE * SIZE) as usize {
+                indexed[i] = nq.index_of(&pixels[i * 4..i * 4 + 4]) as u8;
             }
 
             let mut frame = Frame::default();
@@ -390,7 +369,7 @@ async fn run() {
             frame.height = SIZE as u16;
             frame.delay = FRAME_DELAY;
             frame.buffer = std::borrow::Cow::Borrowed(&indexed);
-            frame.palette = Some(palette.clone());
+            frame.palette = Some(palette);
             encoder.write_frame(&frame).unwrap();
         }
 
