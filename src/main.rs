@@ -1,13 +1,6 @@
-mod audio;
-mod clips;
-mod control;
-mod cv;
-mod renderer;
-mod scene;
-mod scripting;
-mod text;
-mod uniforms;
-mod video;
+use hyperspace::{
+    audio, clips, control, cv, renderer, scene, scripting, text, uniforms, video,
+};
 
 use anyhow::Result;
 use scene::LayoutMode;

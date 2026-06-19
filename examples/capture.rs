@@ -55,7 +55,7 @@ async fn run() {
         .expect("no GPU adapter");
 
     let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default(), None)
+        .request_device(&wgpu::DeviceDescriptor::default())
         .await
         .unwrap();
 
@@ -339,7 +339,7 @@ async fn run() {
             let slice = readback.slice(..);
             let (tx, rx) = std::sync::mpsc::channel();
             slice.map_async(wgpu::MapMode::Read, move |result| { tx.send(result).unwrap(); });
-            device.poll(wgpu::Maintain::Wait);
+            device.poll(wgpu::PollType::Wait).unwrap();
             rx.recv().unwrap().unwrap();
 
             let data = slice.get_mapped_range();
