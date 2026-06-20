@@ -1,7 +1,7 @@
 # TouchDesigner-inspired — new generators + post effects.
-# Shows off the gradient mesh, Voronoi, reaction-diffusion and the
-# ASCII / dither / halftone / chromatic / edge post stack.
-# Run as a grid: cargo run -- scenes/touchdesigner.toml 3x2
+# Shows off the gradient mesh, Voronoi, reaction-diffusion, liquid chrome and
+# the ASCII / dither / halftone / chromatic / edge / kaleidoscope / shockwave
+# post stack. Run as a grid: cargo run -- scenes/touchdesigner.toml 3x3
 
 [audio]
 device = "Blackhole 2ch"
@@ -36,3 +36,17 @@ post = ["shaders/post/chromatic.wgsl"]
 [grid_5]
 shader = "shaders/plasma_vortex.wgsl"
 post = ["shaders/post/ascii.wgsl", "shaders/post/crt.wgsl"]
+
+# Liquid chrome metaballs — raymarched iridescent mercury.
+[grid_6]
+shader = "shaders/liquid_chrome.wgsl"
+
+# Voronoi folded into a breathing kaleidoscope mandala.
+[grid_7]
+shader = "shaders/voronoi_cells.wgsl"
+post = ["shaders/post/kaleidoscope.wgsl"]
+
+# Plasma with a beat-drop shockwave — rings punch out on every beat.
+[grid_8]
+shader = "shaders/plasma_vortex.wgsl"
+post = ["shaders/post/shockwave.wgsl"]

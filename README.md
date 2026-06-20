@@ -32,6 +32,9 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 <td><img src="assets/voronoi_cells.gif" width="260"><br><b>voronoi_cells</b><br>Animated Voronoi, glowing borders</td>
 <td><img src="assets/reaction_diffusion.gif" width="260"><br><b>reaction_diffusion</b><br>Gray-Scott feedback growth</td>
 </tr>
+<tr>
+<td><img src="assets/liquid_chrome.gif" width="260"><br><b>liquid_chrome</b><br>Raymarched iridescent metaballs</td>
+</tr>
 </table>
 
 ## Architecture
@@ -129,6 +132,8 @@ Available post shaders:
 - `post/chromatic.wgsl` — radial RGB split + onset glitch (lens/CRT)
 - `post/edge_sobel.wgsl` — Sobel edge detect, neon contours on black
 - `post/crt.wgsl` — CRT tube: barrel curve, aperture mask, scanlines, bloom (best placed last in a chain)
+- `post/kaleidoscope.wgsl` — N-fold radial mirror, turns any source into a breathing mandala
+- `post/shockwave.wgsl` — beat-drop ripple: expanding ring + zoom punch + bloom flash (needs beat/onset)
 
 See `scenes/touchdesigner.toml` for a grid that pairs each generator with one of these effects.
 

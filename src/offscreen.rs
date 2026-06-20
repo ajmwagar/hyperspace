@@ -154,11 +154,21 @@ impl ScopeRenderer {
             delta_time: 1.0 / 30.0,
             resolution: [self.width as f32, self.height as f32],
             amplitude: bands.amplitude,
+            beat: bands.beat,
             bass: bands.bass,
             mid: bands.mid,
             high: bands.high,
             amplitude_l: bands.amplitude,
             amplitude_r: bands.amplitude,
+            bass_l: bands.bass,
+            bass_r: bands.bass,
+            mid_l: bands.mid,
+            mid_r: bands.mid,
+            high_l: bands.high,
+            high_r: bands.high,
+            onset: bands.onset,
+            sub_bass: bands.sub_bass,
+            presence: bands.presence,
             ..Uniforms::default()
         };
         queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(&u));
@@ -211,15 +221,19 @@ impl ScopeRenderer {
     }
 }
 
-/// Secondary band-energy uniforms (amplitude/bass/mid/high). These are derived
-/// from the audio buffer by the caller; the scene look is driven mainly by the
-/// audio buffer the shaders read directly.
+/// Secondary band-energy uniforms. These are derived from the audio buffer by
+/// the caller; the scene look is driven mainly by the audio buffer the shaders
+/// read directly, but beat/onset-synced effects need these populated.
 #[derive(Clone, Copy, Default)]
 pub struct ScopeBands {
     pub amplitude: f32,
     pub bass: f32,
     pub mid: f32,
     pub high: f32,
+    pub beat: f32,
+    pub onset: f32,
+    pub sub_bass: f32,
+    pub presence: f32,
 }
 
 /// Render the main shader then the post chain into the feedback textures,
