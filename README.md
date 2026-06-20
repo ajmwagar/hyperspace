@@ -34,6 +34,11 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 </tr>
 <tr>
 <td><img src="assets/liquid_chrome.gif" width="260"><br><b>liquid_chrome</b><br>Raymarched iridescent metaballs</td>
+<td><img src="assets/fractal_zoom.gif" width="260"><br><b>fractal_zoom</b><br>Morphing Julia dendrite, rainbow bands</td>
+<td><img src="assets/neon_tunnel.gif" width="260"><br><b>neon_tunnel</b><br>3D volumetric neon flythrough</td>
+</tr>
+<tr>
+<td><img src="assets/ink_flow.gif" width="260"><br><b>ink_flow</b><br>Curl-noise ink in water (feedback)</td>
 </tr>
 </table>
 
@@ -134,6 +139,9 @@ Available post shaders:
 - `post/crt.wgsl` — CRT tube: barrel curve, aperture mask, scanlines, bloom (best placed last in a chain)
 - `post/kaleidoscope.wgsl` — N-fold radial mirror, turns any source into a breathing mandala
 - `post/shockwave.wgsl` — beat-drop ripple: expanding ring + zoom punch + bloom flash (needs beat/onset)
+- `post/glass_shatter.wgsl` — Voronoi shards fly apart on the beat, with cracks + glints
+- `post/bloom.wgsl` — soft glow / light bleed from bright areas (spiral-tap)
+- `post/vhs.wgsl` — analog tape degrade: tracking jitter, chroma bleed, rolling distortion
 
 See `scenes/touchdesigner.toml` for a grid that pairs each generator with one of these effects.
 

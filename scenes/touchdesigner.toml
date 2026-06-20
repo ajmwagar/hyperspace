@@ -1,7 +1,8 @@
 # TouchDesigner-inspired — new generators + post effects.
 # Shows off the gradient mesh, Voronoi, reaction-diffusion, liquid chrome and
-# the ASCII / dither / halftone / chromatic / edge / kaleidoscope / shockwave
-# post stack. Run as a grid: cargo run -- scenes/touchdesigner.toml 3x3
+# the full post stack (ASCII / dither / halftone / chromatic / edge /
+# kaleidoscope / shockwave / glass / bloom / vhs / crt).
+# Run as a grid: cargo run -- scenes/touchdesigner.toml 5x3
 
 [audio]
 device = "Blackhole 2ch"
@@ -50,3 +51,27 @@ post = ["shaders/post/kaleidoscope.wgsl"]
 [grid_8]
 shader = "shaders/plasma_vortex.wgsl"
 post = ["shaders/post/shockwave.wgsl"]
+
+# 3D neon tunnel flythrough, glowing harder through a bloom pass.
+[grid_9]
+shader = "shaders/neon_tunnel.wgsl"
+post = ["shaders/post/bloom.wgsl"]
+
+# Ink-in-water curl-noise fluid.
+[grid_10]
+shader = "shaders/ink_flow.wgsl"
+
+# Morphing Julia fractal folded into a kaleidoscope.
+[grid_11]
+shader = "shaders/fractal_zoom.wgsl"
+post = ["shaders/post/kaleidoscope.wgsl"]
+
+# Voronoi shattering like glass on every beat.
+[grid_12]
+shader = "shaders/voronoi_cells.wgsl"
+post = ["shaders/post/glass_shatter.wgsl"]
+
+# Tunnel through a worn VHS tape into a CRT — the full retro stack.
+[grid_13]
+shader = "shaders/hyperspace_tunnel.wgsl"
+post = ["shaders/post/vhs.wgsl", "shaders/post/crt.wgsl"]

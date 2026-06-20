@@ -1,6 +1,6 @@
-# All shaders — 4x4 grid (4 columns, 4 rows).
+# All shaders — 19 shaders, run on a 5x4 grid (last cell empty).
 # Keep this up to date as new shaders are added.
-# Run with: cargo run -- scenes/all.toml 4x4
+# Run with: cargo run -- scenes/all.toml 5x4
 
 [audio]
 # device = "Scarlett"
@@ -55,3 +55,12 @@ shader = "shaders/reaction_diffusion.wgsl"
 
 [grid_15]
 shader = "shaders/liquid_chrome.wgsl"
+
+[grid_16]
+shader = "shaders/fractal_zoom.wgsl"
+
+[grid_17]
+shader = "shaders/ink_flow.wgsl"
+
+[grid_18]
+shader = "shaders/neon_tunnel.wgsl"

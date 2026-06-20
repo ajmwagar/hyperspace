@@ -17,18 +17,23 @@
 <td><img src="fractal_pulse.gif" width="200"><br><b>fractal_pulse</b><br>Julia set fractal that breathes with aud</td>
 </tr>
 <tr>
+<td><img src="fractal_zoom.gif" width="200"><br><b>fractal_zoom</b><br>an animated Julia set that morphs, breat</td>
 <td><img src="gforce.gif" width="200"><br><b>gforce</b><br>feedback visualizer inspired by SoundSpe</td>
 <td><img src="gradient_flow.gif" width="200"><br><b>gradient_flow</b><br>ShaderGradient-inspired flowing mesh gra</td>
-<td><img src="hyperdrive.gif" width="200"><br><b>hyperdrive</b><br>Star Wars lightspeed jump. Stars streak </td>
 </tr>
 <tr>
+<td><img src="hyperdrive.gif" width="200"><br><b>hyperdrive</b><br>Star Wars lightspeed jump. Stars streak </td>
 <td><img src="hyperspace_tunnel.gif" width="200"><br><b>hyperspace_tunnel</b><br></td>
+<td><img src="ink_flow.gif" width="200"><br><b>ink_flow</b><br>coloured ink/dye swirling in water, a cu</td>
+</tr>
+<tr>
 <td><img src="lava_lamp.gif" width="200"><br><b>lava_lamp</b><br>soft metaball blobs that rise, merge, an</td>
 <td><img src="liquid_chrome.gif" width="200"><br><b>liquid_chrome</b><br>raymarched metaballs with a reflective, </td>
+<td><img src="neon_grid.gif" width="200"><br><b>neon_grid</b><br>retrowave infinite grid with audio-react</td>
 </tr>
 <tr>
-<td><img src="neon_grid.gif" width="200"><br><b>neon_grid</b><br>retrowave infinite grid with audio-react</td>
 <td><img src="neon_string.gif" width="200"><br><b>neon_string</b><br>a single luminous arc that vibrates with</td>
+<td><img src="neon_tunnel.gif" width="200"><br><b>neon_tunnel</b><br>a 3D volumetric flythrough of a glowing </td>
 <td><img src="neural_link.gif" width="200"><br><b>neural_link</b><br>two chrome mannequin busts connected by </td>
 </tr>
 <tr>
