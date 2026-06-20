@@ -29,12 +29,12 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 </tr>
 <tr>
 <td><img src="assets/gradient_flow.gif" width="260"><br><b>gradient_flow</b><br>ShaderGradient-style flowing mesh</td>
-<td><img src="assets/voronoi_cells.gif" width="260"><br><b>voronoi_cells</b><br>Animated Voronoi, glowing borders</td>
+<td><img src="assets/voronoi_cells.gif" width="260"><br><b>voronoi_cells</b><br>Cut-crystal stained-glass mosaic</td>
 <td><img src="assets/reaction_diffusion.gif" width="260"><br><b>reaction_diffusion</b><br>Gray-Scott feedback growth</td>
 </tr>
 <tr>
 <td><img src="assets/liquid_chrome.gif" width="260"><br><b>liquid_chrome</b><br>Raymarched iridescent metaballs</td>
-<td><img src="assets/fractal_zoom.gif" width="260"><br><b>fractal_zoom</b><br>Morphing Julia dendrite, rainbow bands</td>
+<td><img src="assets/fractal_zoom.gif" width="260"><br><b>fractal_zoom</b><br>Infinite Mandelbrot dive (vs fractal_pulse's Julia)</td>
 <td><img src="assets/neon_tunnel.gif" width="260"><br><b>neon_tunnel</b><br>3D volumetric neon flythrough</td>
 </tr>
 <tr>

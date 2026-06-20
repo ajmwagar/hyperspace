@@ -102,9 +102,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let v = velocity(uv * 3.0 + vec2<f32>(0.0, u.time * 0.05));
     let flow = 0.0016 * (1.0 + u.bass * 1.5);
 
-    // Advect: pull dye from upstream.
+    // Advect: pull dye from upstream, with a small cross-tap blur so the ink
+    // diffuses and feathers like real dye in water (vs acid_melt's hard warp).
     let src = uv - v * flow;
-    var dye = textureSample(prev_frame, prev_sampler, src).rgb * 0.992;
+    let tx = 1.4 / u.resolution;
+    var dye = textureSample(prev_frame, prev_sampler, src).rgb * 0.4;
+    dye = dye + textureSample(prev_frame, prev_sampler, src + vec2<f32>(tx.x, 0.0)).rgb * 0.15;
+    dye = dye + textureSample(prev_frame, prev_sampler, src - vec2<f32>(tx.x, 0.0)).rgb * 0.15;
+    dye = dye + textureSample(prev_frame, prev_sampler, src + vec2<f32>(0.0, tx.y)).rgb * 0.15;
+    dye = dye + textureSample(prev_frame, prev_sampler, src - vec2<f32>(0.0, tx.y)).rgb * 0.15;
+    dye = dye * 0.992;
 
     // Two drifting emitters squirt coloured ink continuously.
     for (var k = 0; k < 2; k = k + 1) {

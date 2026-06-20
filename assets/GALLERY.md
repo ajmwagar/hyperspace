@@ -17,7 +17,7 @@
 <td><img src="fractal_pulse.gif" width="200"><br><b>fractal_pulse</b><br>Julia set fractal that breathes with aud</td>
 </tr>
 <tr>
-<td><img src="fractal_zoom.gif" width="200"><br><b>fractal_zoom</b><br>an animated Julia set that morphs, breat</td>
+<td><img src="fractal_zoom.gif" width="200"><br><b>fractal_zoom</b><br>an endless zoom into the Mandelbrot set </td>
 <td><img src="gforce.gif" width="200"><br><b>gforce</b><br>feedback visualizer inspired by SoundSpe</td>
 <td><img src="gradient_flow.gif" width="200"><br><b>gradient_flow</b><br>ShaderGradient-inspired flowing mesh gra</td>
 </tr>
@@ -44,6 +44,6 @@
 <tr>
 <td><img src="reaction_diffusion.gif" width="200"><br><b>reaction_diffusion</b><br>Gray-Scott system, a TouchDesigner feedb</td>
 <td><img src="video_player.gif" width="200"><br><b>video_player</b><br>displays video content from prev_frame t</td>
-<td><img src="voronoi_cells.gif" width="200"><br><b>voronoi_cells</b><br>TouchDesigner-style animated Voronoi dia</td>
+<td><img src="voronoi_cells.gif" width="200"><br><b>voronoi_cells</b><br>a cut-gem / shattered-crystal Voronoi mo</td>
 </tr>
 </table>

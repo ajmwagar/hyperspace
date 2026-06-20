@@ -1,8 +1,9 @@
-// Fractal Zoom — an animated Julia set that morphs, breathes and cycles colour.
-// The whole frame fills with fractal dendrites (no big black interior like the
-// Mandelbrot), so it reads as a hypnotic, ever-shifting bloom. Bass reshapes
-// the set, mids drive the palette, beats flash it, and a slow breathing zoom
-// keeps it loop-friendly for Reels.
+// Fractal Dive — an endless zoom into the Mandelbrot set (distinct from
+// fractal_pulse, which morphs a full-screen Julia in place). The camera dives
+// into the Seahorse Valley and breathes back out, revealing self-similar
+// mini-brots and spirals at every depth. Distance-estimate shading keeps the
+// filaments razor-crisp; bass deepens the dive, mids cycle the palette, beats
+// flash. Loops via the in/out breathing so it tiles cleanly for Reels.
 
 struct Uniforms {
     time: f32,
@@ -57,53 +58,60 @@ fn palette(t: f32) -> vec3<f32> {
     return a + b * cos(6.28318 * (c * t + d));
 }
 
+fn cmul(a: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let aspect = u.resolution.x / u.resolution.y;
     var uv = in.uv * 2.0 - 1.0;
     uv.x = uv.x * aspect;
 
-    // Breathing zoom + slow rotation keep it alive and loopable.
-    let zoom = 1.3 * exp(-0.2 * sin(u.time * 0.2) - u.bass * 0.3);
-    let rot = u.time * 0.05;
+    // A famous deep-zoom coordinate in the Seahorse Valley.
+    let focus = vec2<f32>(-0.743643887037, 0.131825904205);
+
+    // Breathing log-zoom: dive in to ~e^12 magnification and back, so it loops.
+    let depth = mix(1.5, 12.0, 0.5 - 0.5 * cos(u.time * 0.16)) + u.bass * 1.5;
+    let scale = exp(-depth);
+
+    // Slow rotation for extra motion.
+    let rot = u.time * 0.03;
     let cr = cos(rot);
     let sr = sin(rot);
-    var z = vec2<f32>(uv.x * cr - uv.y * sr, uv.x * sr + uv.y * cr) * zoom;
+    let ruv = vec2<f32>(uv.x * cr - uv.y * sr, uv.x * sr + uv.y * cr);
+    let c = focus + ruv * scale;
 
-    // A classic dendrite Julia constant, gently morphing — gives crisp
-    // filaments that fill the frame rather than a pale blob.
-    let c = vec2<f32>(-0.8, 0.156)
-        + 0.05 * vec2<f32>(cos(u.time * 0.2), sin(u.time * 0.25))
-        + u.bass * 0.03;
-
+    // Iterate with the derivative for a distance estimate (crisp filaments).
+    var z = vec2<f32>(0.0, 0.0);
+    var dz = vec2<f32>(1.0, 0.0);
     var i = 0;
-    let maxi = 160;
-    // Orbit trap: track closest approach to the origin for richer colour.
-    var trap = 1e9;
+    let maxi = 256;
     for (; i < maxi; i = i + 1) {
-        // z = z^2 + c
-        z = vec2<f32>(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
-        trap = min(trap, dot(z, z));
-        if (dot(z, z) > 64.0) {
+        dz = 2.0 * cmul(z, dz) + vec2<f32>(1.0, 0.0);
+        z = cmul(z, z) + c;
+        if (dot(z, z) > 1.0e6) {
             break;
         }
     }
 
-    let mag = dot(z, z);
-    // Smooth iteration count for banding without stair-steps.
-    let smooth_i = f32(i) - log2(max(0.5 * log2(max(mag, 1.0001)), 1e-4));
-
     var col: vec3<f32>;
+    let m2 = dot(z, z);
     if (i >= maxi) {
-        // Interior: dark, tinted by the orbit trap so it isn't flat black.
-        col = palette(0.6 + sqrt(trap)) * 0.18;
+        // Interior — near black so the boundary detail pops.
+        col = vec3<f32>(0.02, 0.0, 0.04);
     } else {
-        // Escape bands — higher frequency = more vivid colour rings.
-        let t = smooth_i * 0.07 + sqrt(trap) * 0.3 + u.time * 0.05 + u.mid * 0.3;
-        col = palette(t);
-        // Crisp bright filaments near the escape boundary.
-        let fil = pow(smooth_i / f32(maxi), 0.4);
-        col = col * (0.5 + fil * 1.3);
+        // Smooth iteration + Böttcher distance estimate.
+        let smooth_i = f32(i) - log2(max(0.5 * log2(max(m2, 1.0001)), 1e-4));
+        let dist = 0.5 * sqrt(m2) * log(max(m2, 1.0001)) / max(length(dz), 1e-6);
+        // Pixel size in fractal space → crisp, resolution-independent edges.
+        let px = scale * 2.0 / u.resolution.y;
+        let edge = clamp(dist / px, 0.0, 1.0);
+
+        let t = smooth_i * 0.06 + depth * 0.05 + u.time * 0.04 + u.mid * 0.3;
+        col = palette(t) * edge;
+        // Bright filament right at the boundary.
+        col = col + palette(t + 0.5) * (1.0 - edge) * 0.6;
     }
 
     col = col * (0.85 + u.amplitude * 0.5);
