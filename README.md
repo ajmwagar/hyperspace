@@ -8,24 +8,29 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 
 <table>
 <tr>
-<td><img src="assets/hyperspace_tunnel.gif" width="200"><br><b>hyperspace_tunnel</b><br>Polar tunnel, stereo bend</td>
-<td><img src="assets/engine_gauges.gif" width="200"><br><b>engine_gauges</b><br>Spectrum analyzer, CRT phosphor</td>
-<td><img src="assets/plasma_vortex.gif" width="200"><br><b>plasma_vortex</b><br>Swirling plasma, spectrum ring</td>
+<td><img src="assets/hyperspace_tunnel.gif" width="260"><br><b>hyperspace_tunnel</b><br>Polar tunnel, stereo bend</td>
+<td><img src="assets/engine_gauges.gif" width="260"><br><b>engine_gauges</b><br>Spectrum analyzer, CRT phosphor</td>
+<td><img src="assets/plasma_vortex.gif" width="260"><br><b>plasma_vortex</b><br>Swirling plasma, spectrum ring</td>
 </tr>
 <tr>
-<td><img src="assets/neon_grid.gif" width="200"><br><b>neon_grid</b><br>Retrowave grid, beat lightning</td>
-<td><img src="assets/fractal_pulse.gif" width="200"><br><b>fractal_pulse</b><br>Breathing Julia set</td>
-<td><img src="assets/hyperdrive.gif" width="200"><br><b>hyperdrive</b><br>Star Wars lightspeed streaks</td>
+<td><img src="assets/neon_grid.gif" width="260"><br><b>neon_grid</b><br>Retrowave grid, beat lightning</td>
+<td><img src="assets/fractal_pulse.gif" width="260"><br><b>fractal_pulse</b><br>Breathing Julia set</td>
+<td><img src="assets/hyperdrive.gif" width="260"><br><b>hyperdrive</b><br>Star Wars lightspeed streaks</td>
 </tr>
 <tr>
-<td><img src="assets/classic_viz.gif" width="200"><br><b>classic_viz</b><br>Winamp kaleidoscope spectrum</td>
-<td><img src="assets/cyberpunk.gif" width="200"><br><b>cyberpunk</b><br>Digital rain, glitch, circuits</td>
-<td><img src="assets/lava_lamp.gif" width="200"><br><b>lava_lamp</b><br>Metaball blobs, autonomous</td>
+<td><img src="assets/classic_viz.gif" width="260"><br><b>classic_viz</b><br>Winamp kaleidoscope spectrum</td>
+<td><img src="assets/cyberpunk.gif" width="260"><br><b>cyberpunk</b><br>Digital rain, glitch, circuits</td>
+<td><img src="assets/lava_lamp.gif" width="260"><br><b>lava_lamp</b><br>Metaball blobs, autonomous</td>
 </tr>
 <tr>
-<td><img src="assets/oscilloscope.gif" width="200"><br><b>oscilloscope</b><br>Real waveform + Lissajous XY</td>
-<td><img src="assets/cellular.gif" width="200"><br><b>cellular</b><br>Game of Life (Lua simulation)</td>
-<td><img src="assets/gforce.gif" width="200"><br><b>gforce</b><br>G-Force feedback visualizer</td>
+<td><img src="assets/oscilloscope.gif" width="260"><br><b>oscilloscope</b><br>Real waveform + Lissajous XY</td>
+<td><img src="assets/cellular.gif" width="260"><br><b>cellular</b><br>Game of Life (Lua simulation)</td>
+<td><img src="assets/gforce.gif" width="260"><br><b>gforce</b><br>G-Force feedback visualizer</td>
+</tr>
+<tr>
+<td><img src="assets/gradient_flow.gif" width="260"><br><b>gradient_flow</b><br>ShaderGradient-style flowing mesh</td>
+<td><img src="assets/voronoi_cells.gif" width="260"><br><b>voronoi_cells</b><br>Animated Voronoi, glowing borders</td>
+<td><img src="assets/reaction_diffusion.gif" width="260"><br><b>reaction_diffusion</b><br>Gray-Scott feedback growth</td>
 </tr>
 </table>
 
@@ -118,6 +123,14 @@ Available post shaders:
 - `post/flow_drift.wgsl` — organic horizontal/vertical displacement
 - `post/colormap_neon.wgsl` — rainbow palette cycling
 - `post/colormap_fire.wgsl` — warm fire gradient
+- `post/ascii.wgsl` — live ASCII-art dithering (glyph grid by brightness)
+- `post/dither_bayer.wgsl` — ordered 8×8 Bayer dithering, retro low-bit banding
+- `post/halftone.wgsl` — rotated CMY dot screen, print/comic look
+- `post/chromatic.wgsl` — radial RGB split + onset glitch (lens/CRT)
+- `post/edge_sobel.wgsl` — Sobel edge detect, neon contours on black
+- `post/crt.wgsl` — CRT tube: barrel curve, aperture mask, scanlines, bloom (best placed last in a chain)
+
+See `scenes/touchdesigner.toml` for a grid that pairs each generator with one of these effects.
 
 ### Lua Scripting
 
@@ -174,8 +187,8 @@ shader = "shaders/gforce.wgsl"
 # Default scene (center + sides)
 cargo run -- scenes/default.toml
 
-# 4x3 grid with all shaders
-cargo run -- scenes/all.toml 4x3
+# 5x3 grid with all shaders
+cargo run -- scenes/all.toml 5x3
 
 # Full-screen G-Force feedback visualizer
 cargo run -- scenes/gforce.toml
@@ -191,8 +204,28 @@ cargo run -- scenes/composed.toml
 
 ```sh
 cargo run --example capture --features capture
-# Renders 60 frames of each shader to assets/*.gif
+# Renders 60 frames of each shader at 512x512 to assets/*.gif
 ```
+
+### Offline render (wav → mp4)
+
+Render a visualizer mp4 from an audio file, driven by that audio. Runs the
+real scene (main shader + post chain) in a headless offscreen loop and muxes
+the original audio into the output. Requires `ffmpeg` on PATH.
+
+```sh
+cargo run --release --features render --example render -- <input.wav> <output.mp4> [scene.toml] [fps]
+# Defaults: scene = scenes/composed.toml, fps = 30, resolution = 1280x720
+# e.g.
+cargo run --release --features render --example render -- song.wav song.mp4
+```
+
+Decodes wav via `hound` (f32 or int PCM, mono or stereo; mono is duplicated to
+L/R). Each frame's audio buffer is computed from the sample window at that
+frame's timestamp — FFT spectrum (log-scaled, matching `src/audio.rs`) plus the
+raw L/R waveform — and uploaded to the same `[0..512)=spectrum,
+[512..1024)=wave L, [1024..1536)=wave R` buffer the live engine uses. The output
+mp4 contains both a video and an audio stream.
 
 ## Stack
 

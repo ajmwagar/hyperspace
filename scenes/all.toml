@@ -1,6 +1,6 @@
-# All shaders — 4x3 grid (4 columns, 3 rows).
+# All shaders — 5x3 grid (5 columns, 3 rows).
 # Keep this up to date as new shaders are added.
-# Run with: cargo run -- scenes/all.toml 4x3
+# Run with: cargo run -- scenes/all.toml 5x3
 
 [audio]
 # device = "Scarlett"
@@ -43,3 +43,12 @@ shader = "shaders/cellular.wgsl"
 
 [grid_11]
 shader = "shaders/gforce.wgsl"
+
+[grid_12]
+shader = "shaders/gradient_flow.wgsl"
+
+[grid_13]
+shader = "shaders/voronoi_cells.wgsl"
+
+[grid_14]
+shader = "shaders/reaction_diffusion.wgsl"

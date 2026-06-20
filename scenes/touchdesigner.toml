@@ -1,0 +1,38 @@
+# TouchDesigner-inspired — new generators + post effects.
+# Shows off the gradient mesh, Voronoi, reaction-diffusion and the
+# ASCII / dither / halftone / chromatic / edge post stack.
+# Run as a grid: cargo run -- scenes/touchdesigner.toml 3x2
+
+[audio]
+device = "Blackhole 2ch"
+channels = "0,1"
+
+# Smooth flowing mesh gradient, pushed through ordered dithering.
+[grid_0]
+shader = "shaders/gradient_flow.wgsl"
+post = ["shaders/post/dither_bayer.wgsl"]
+
+# Gradient rendered as live ASCII art.
+[grid_1]
+shader = "shaders/gradient_flow.wgsl"
+post = ["shaders/post/ascii.wgsl"]
+
+# Animated Voronoi cells with a print-style halftone screen.
+[grid_2]
+shader = "shaders/voronoi_cells.wgsl"
+post = ["shaders/post/halftone.wgsl"]
+
+# Voronoi reduced to glowing Sobel contours.
+[grid_3]
+shader = "shaders/voronoi_cells.wgsl"
+post = ["shaders/post/edge_sobel.wgsl"]
+
+# Gray-Scott reaction-diffusion (feedback), with lens chromatic aberration.
+[grid_4]
+shader = "shaders/reaction_diffusion.wgsl"
+post = ["shaders/post/chromatic.wgsl"]
+
+# Plasma → ASCII → CRT: a demoscene terminal on a real tube.
+[grid_5]
+shader = "shaders/plasma_vortex.wgsl"
+post = ["shaders/post/ascii.wgsl", "shaders/post/crt.wgsl"]

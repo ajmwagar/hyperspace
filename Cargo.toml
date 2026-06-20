@@ -6,7 +6,7 @@ license = "AGPL-3.0-or-later"
 description = "Audio-reactive video synthesis engine for CRT displays"
 
 [dependencies]
-wgpu = "24"
+wgpu = "25"
 winit = "0.30"
 cpal = "0.15"
 rustfft = "6"
@@ -21,13 +21,23 @@ mlua = { version = "0.10", features = ["lua54", "vendored"] }
 image = "0.25"
 serde_json = "1"
 gif = { version = "0.13", optional = true }
+color_quant = { version = "1", optional = true }
+hound = { version = "3", optional = true }
 
 [features]
-capture = ["gif"]
+capture = ["gif", "color_quant"]
+render = ["hound"]
+
+[dev-dependencies]
+naga = { version = "25", features = ["wgsl-in"] }
 
 [[example]]
 name = "capture"
 required-features = ["capture"]
+
+[[example]]
+name = "render"
+required-features = ["render"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rppal = "0.22"
