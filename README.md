@@ -217,7 +217,7 @@ cargo run -- scenes/composed.toml
 
 ```sh
 cargo run --example capture --features capture
-# Renders 60 frames of each shader at 768x768 to assets/*.gif
+# Renders 60 frames of each shader at 640x640 to assets/*.gif
 ```
 
 ### Offline render (wav → mp4)
