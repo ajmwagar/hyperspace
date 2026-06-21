@@ -1,13 +1,13 @@
 //! Headless GIF capture of each shader.
 //! Usage: cargo run --example capture --features capture
 //!
-//! Renders 60 frames of each shader at 512x512 and saves as GIF in assets/.
+//! Renders 60 frames of each shader at 768x768 and saves as GIF in assets/.
 
 use gif::{Encoder, Frame, Repeat};
 use std::fs;
 use wgpu::util::DeviceExt;
 
-const SIZE: u32 = 512;
+const SIZE: u32 = 768;
 const FRAMES: u32 = 60;
 const FRAME_DELAY: u16 = 3; // centiseconds (3 = ~33fps)
 

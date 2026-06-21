@@ -8,37 +8,37 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 
 <table>
 <tr>
-<td><img src="assets/hyperspace_tunnel.gif" width="260"><br><b>hyperspace_tunnel</b><br>Polar tunnel, stereo bend</td>
-<td><img src="assets/engine_gauges.gif" width="260"><br><b>engine_gauges</b><br>Spectrum analyzer, CRT phosphor</td>
-<td><img src="assets/plasma_vortex.gif" width="260"><br><b>plasma_vortex</b><br>Swirling plasma, spectrum ring</td>
+<td><img src="assets/hyperspace_tunnel.gif" width="320"><br><b>hyperspace_tunnel</b><br>Polar tunnel, stereo bend</td>
+<td><img src="assets/engine_gauges.gif" width="320"><br><b>engine_gauges</b><br>Spectrum analyzer, CRT phosphor</td>
+<td><img src="assets/plasma_vortex.gif" width="320"><br><b>plasma_vortex</b><br>Swirling plasma, spectrum ring</td>
 </tr>
 <tr>
-<td><img src="assets/neon_grid.gif" width="260"><br><b>neon_grid</b><br>Retrowave grid, beat lightning</td>
-<td><img src="assets/fractal_pulse.gif" width="260"><br><b>fractal_pulse</b><br>Breathing Julia set</td>
-<td><img src="assets/hyperdrive.gif" width="260"><br><b>hyperdrive</b><br>Star Wars lightspeed streaks</td>
+<td><img src="assets/neon_grid.gif" width="320"><br><b>neon_grid</b><br>Retrowave grid, beat lightning</td>
+<td><img src="assets/fractal_pulse.gif" width="320"><br><b>fractal_pulse</b><br>Breathing Julia set</td>
+<td><img src="assets/hyperdrive.gif" width="320"><br><b>hyperdrive</b><br>Star Wars lightspeed streaks</td>
 </tr>
 <tr>
-<td><img src="assets/classic_viz.gif" width="260"><br><b>classic_viz</b><br>Winamp kaleidoscope spectrum</td>
-<td><img src="assets/cyberpunk.gif" width="260"><br><b>cyberpunk</b><br>Digital rain, glitch, circuits</td>
-<td><img src="assets/lava_lamp.gif" width="260"><br><b>lava_lamp</b><br>Metaball blobs, autonomous</td>
+<td><img src="assets/classic_viz.gif" width="320"><br><b>classic_viz</b><br>Winamp kaleidoscope spectrum</td>
+<td><img src="assets/cyberpunk.gif" width="320"><br><b>cyberpunk</b><br>Digital rain, glitch, circuits</td>
+<td><img src="assets/lava_lamp.gif" width="320"><br><b>lava_lamp</b><br>Metaball blobs, autonomous</td>
 </tr>
 <tr>
-<td><img src="assets/oscilloscope.gif" width="260"><br><b>oscilloscope</b><br>Real waveform + Lissajous XY</td>
-<td><img src="assets/cellular.gif" width="260"><br><b>cellular</b><br>Game of Life (Lua simulation)</td>
-<td><img src="assets/gforce.gif" width="260"><br><b>gforce</b><br>G-Force feedback visualizer</td>
+<td><img src="assets/oscilloscope.gif" width="320"><br><b>oscilloscope</b><br>Real waveform + Lissajous XY</td>
+<td><img src="assets/cellular.gif" width="320"><br><b>cellular</b><br>Game of Life (Lua simulation)</td>
+<td><img src="assets/gforce.gif" width="320"><br><b>gforce</b><br>G-Force feedback visualizer</td>
 </tr>
 <tr>
-<td><img src="assets/gradient_flow.gif" width="260"><br><b>gradient_flow</b><br>ShaderGradient-style flowing mesh</td>
-<td><img src="assets/voronoi_cells.gif" width="260"><br><b>voronoi_cells</b><br>Cut-crystal stained-glass mosaic</td>
-<td><img src="assets/reaction_diffusion.gif" width="260"><br><b>reaction_diffusion</b><br>Gray-Scott feedback growth</td>
+<td><img src="assets/gradient_flow.gif" width="320"><br><b>gradient_flow</b><br>ShaderGradient-style flowing mesh</td>
+<td><img src="assets/voronoi_cells.gif" width="320"><br><b>voronoi_cells</b><br>Cut-crystal stained-glass mosaic</td>
+<td><img src="assets/reaction_diffusion.gif" width="320"><br><b>reaction_diffusion</b><br>Gray-Scott feedback growth</td>
 </tr>
 <tr>
-<td><img src="assets/liquid_chrome.gif" width="260"><br><b>liquid_chrome</b><br>Raymarched iridescent metaballs</td>
-<td><img src="assets/fractal_zoom.gif" width="260"><br><b>fractal_zoom</b><br>Infinite Mandelbrot dive (vs fractal_pulse's Julia)</td>
-<td><img src="assets/neon_tunnel.gif" width="260"><br><b>neon_tunnel</b><br>3D volumetric neon flythrough</td>
+<td><img src="assets/liquid_chrome.gif" width="320"><br><b>liquid_chrome</b><br>Raymarched iridescent metaballs</td>
+<td><img src="assets/fractal_zoom.gif" width="320"><br><b>fractal_zoom</b><br>Infinite Mandelbrot dive (vs fractal_pulse's Julia)</td>
+<td><img src="assets/neon_tunnel.gif" width="320"><br><b>neon_tunnel</b><br>3D volumetric neon flythrough</td>
 </tr>
 <tr>
-<td><img src="assets/ink_flow.gif" width="260"><br><b>ink_flow</b><br>Curl-noise ink in water (feedback)</td>
+<td><img src="assets/ink_flow.gif" width="320"><br><b>ink_flow</b><br>Curl-noise ink in water (feedback)</td>
 </tr>
 </table>
 
@@ -217,7 +217,7 @@ cargo run -- scenes/composed.toml
 
 ```sh
 cargo run --example capture --features capture
-# Renders 60 frames of each shader at 512x512 to assets/*.gif
+# Renders 60 frames of each shader at 768x768 to assets/*.gif
 ```
 
 ### Offline render (wav → mp4)
