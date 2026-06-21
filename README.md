@@ -39,6 +39,7 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 </tr>
 <tr>
 <td><img src="assets/ink_flow.gif" width="320"><br><b>ink_flow</b><br>Curl-noise ink in water (feedback)</td>
+<td><img src="assets/plato_rave.gif" width="320"><br><b>plato_rave</b><br>Unseen shape, only its shadow on the walls</td>
 </tr>
 </table>
 

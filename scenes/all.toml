@@ -1,4 +1,4 @@
-# All shaders — 19 shaders, run on a 5x4 grid (last cell empty).
+# All shaders — 20 shaders, run on a 5x4 grid.
 # Keep this up to date as new shaders are added.
 # Run with: cargo run -- scenes/all.toml 5x4
 
@@ -64,3 +64,6 @@ shader = "shaders/ink_flow.wgsl"
 
 [grid_18]
 shader = "shaders/neon_tunnel.wgsl"
+
+[grid_19]
+shader = "shaders/plato_rave.wgsl"

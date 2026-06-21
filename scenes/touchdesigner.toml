@@ -75,3 +75,7 @@ post = ["shaders/post/glass_shatter.wgsl"]
 [grid_13]
 shader = "shaders/hyperspace_tunnel.wgsl"
 post = ["shaders/post/vhs.wgsl", "shaders/post/crt.wgsl"]
+
+# Plato's Rave — audioreactive funnel rendered only as shadows on a virtual room.
+[grid_14]
+shader = "shaders/plato_rave.wgsl"
