@@ -40,6 +40,12 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 <tr>
 <td><img src="assets/ink_flow.gif" width="320"><br><b>ink_flow</b><br>Curl-noise ink in water (feedback)</td>
 <td><img src="assets/plato_rave.gif" width="320"><br><b>plato_rave</b><br>Unseen shape, only its shadow on the walls</td>
+<td><img src="assets/mandelbulb.gif" width="320"><br><b>mandelbulb</b><br>Classic 3D fractal, power morphs to audio</td>
+</tr>
+<tr>
+<td><img src="assets/mandelbox.gif" width="320"><br><b>mandelbox</b><br>Folded-box fractal cathedral</td>
+<td><img src="assets/fractal_flight.gif" width="320"><br><b>fractal_flight</b><br>Bar-synced run through a fractal lattice</td>
+<td><img src="assets/acid_soup.gif" width="320"><br><b>acid_soup</b><br>Foggy Mandelbox melted into churning soup</td>
 </tr>
 </table>
 

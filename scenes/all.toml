@@ -1,6 +1,6 @@
-# All shaders — 20 shaders, run on a 5x4 grid.
+# All shaders — 24 shaders, run on a 6x4 grid.
 # Keep this up to date as new shaders are added.
-# Run with: cargo run -- scenes/all.toml 5x4
+# Run with: cargo run -- scenes/all.toml 6x4
 
 [audio]
 # device = "Scarlett"
@@ -67,3 +67,15 @@ shader = "shaders/neon_tunnel.wgsl"
 
 [grid_19]
 shader = "shaders/plato_rave.wgsl"
+
+[grid_20]
+shader = "shaders/mandelbulb.wgsl"
+
+[grid_21]
+shader = "shaders/mandelbox.wgsl"
+
+[grid_22]
+shader = "shaders/acid_soup.wgsl"
+
+[grid_23]
+shader = "shaders/fractal_flight.wgsl"

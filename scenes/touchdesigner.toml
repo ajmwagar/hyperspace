@@ -2,7 +2,7 @@
 # Shows off the gradient mesh, Voronoi, reaction-diffusion, liquid chrome and
 # the full post stack (ASCII / dither / halftone / chromatic / edge /
 # kaleidoscope / shockwave / glass / bloom / vhs / crt).
-# Run as a grid: cargo run -- scenes/touchdesigner.toml 5x3
+# Run as a grid: cargo run -- scenes/touchdesigner.toml 5x4
 
 [audio]
 device = "Blackhole 2ch"
@@ -79,3 +79,19 @@ post = ["shaders/post/vhs.wgsl", "shaders/post/crt.wgsl"]
 # Plato's Rave — audioreactive funnel rendered only as shadows on a virtual room.
 [grid_14]
 shader = "shaders/plato_rave.wgsl"
+
+# Mandelbulb — classic 3D fractal, power morphs to the music.
+[grid_15]
+shader = "shaders/mandelbulb.wgsl"
+
+# Mandelbox — folded-box fractal cathedral.
+[grid_16]
+shader = "shaders/mandelbox.wgsl"
+
+# Fractal Flight — bar-synced run through an endless fractal lattice.
+[grid_17]
+shader = "shaders/fractal_flight.wgsl"
+
+# Acid Soup — foggy Mandelbox melted into churning soup.
+[grid_18]
+shader = "shaders/acid_soup.wgsl"
