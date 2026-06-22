@@ -93,8 +93,8 @@ fn cave(p: vec3<f32>) -> f32 {
     d = d + (noise2(p.xy * 0.8 + 1.3) - 0.5) * 1.05;
     d = d + (noise2(p.zy * 1.5 + 7.1) - 0.5) * 0.45;
     // Ridged octave (1 - |..|) gives craggy stone rather than smooth blobs.
-    d = d - (1.0 - abs(noise2(p.xy * 3.1 + 4.2) * 2.0 - 1.0)) * 0.22;
-    d = d + (noise2(p.zx * 5.5 + 9.0) - 0.5) * 0.12;
+    d = d - (1.0 - abs(noise2(p.xy * 3.1 + 4.2) * 2.0 - 1.0)) * 0.12;
+    d = d + (noise2(p.zx * 5.5 + 9.0) - 0.5) * 0.06;
     return d;
 }
 
@@ -109,24 +109,56 @@ fn cave_normal(p: vec3<f32>) -> vec3<f32> {
     return -normalize(g);
 }
 
-const FIG_SPACING: f32 = 0.95;
-const FIG_Z: f32 = 2.0;
+const FIG_SPACING: f32 = 1.2;
+const FIG_Z: f32 = 2.3;
 
-// The UNSEEN occluders: a horizontal row of swaying figures on the cave floor.
-// Tiled along x. Only ever blocks light.
+fn sd_capsule(p: vec3<f32>, a: vec3<f32>, b: vec3<f32>, r: f32) -> f32 {
+    let pa = p - a;
+    let ba = b - a;
+    let h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h) - r;
+}
+fn smin(a: f32, b: f32, k: f32) -> f32 {
+    let h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// The UNSEEN occluders: a horizontal row of dancing humanoid figures, built
+// from limbs so their shadows read as people. Tiled along x. Only blocks light.
 fn map_shape(p: vec3<f32>) -> f32 {
-    let t = clamp((p.y + 1.2) / 2.2, 0.0, 1.0);
     let id = round(p.x / FIG_SPACING);
-    let lx = p.x - FIG_SPACING * id;
+    // Local space, centred on each figure (faces the wall, thin in z).
+    var q = vec3<f32>(p.x - FIG_SPACING * id, p.y, p.z - FIG_Z);
+
     let ph = id * 1.7;
-    let sway = sin(u.time * 1.6 + ph) * (0.08 + u.mid * 0.30);
-    let cx = sway * t;
-    let s = spec_at(t);
-    let body = 0.10 * (0.65 + 0.55 * sin(t * 3.14159));
-    let r = body * (1.0 + u.bass * 0.5 + s * 0.35);
-    var d = length(vec2<f32>(lx - cx, p.z - FIG_Z)) - r;
-    let head = -1.2 + (1.7 + 0.5 * hash11(id + 3.0));
-    d = max(d, p.y - head);
+    let bt = u.time * 2.2 + ph;                 // dance tempo
+    let energy = 0.45 + u.amplitude * 0.8 + u.beat * 0.6;
+    let bob = sin(bt * 2.0) * 0.05 * energy;
+    let lean = sin(bt) * 0.12 * energy;         // shoulders sway
+    let girth = 1.0 + u.bass * 0.4;
+
+    // Key joints (feet on the cave floor ~ y = -1.15).
+    let hip = vec3<f32>(0.0, -0.35 + bob, 0.0);
+    let sho = vec3<f32>(lean, 0.30 + bob, 0.0);
+    let head = vec3<f32>(lean * 1.1, 0.55 + bob, 0.0);
+
+    // Torso + head.
+    var d = sd_capsule(q, hip, sho, 0.10 * girth);
+    d = smin(d, length(q - head) - 0.11, 0.04);
+
+    // Arms swinging/raising with the music (hands up = dancing).
+    let raiseL = sin(bt) * 0.9 + 0.5 * energy;
+    let raiseR = sin(bt + 2.1) * 0.9 + 0.5 * energy;
+    let handL = vec3<f32>(sho.x - 0.30 - 0.08 * sin(bt), sho.y + 0.30 * raiseL, 0.07 * sin(bt));
+    let handR = vec3<f32>(sho.x + 0.30 + 0.08 * sin(bt + 1.3), sho.y + 0.30 * raiseR, -0.07 * sin(bt));
+    d = smin(d, sd_capsule(q, sho + vec3<f32>(-0.12, 0.0, 0.0), handL, 0.05), 0.04);
+    d = smin(d, sd_capsule(q, sho + vec3<f32>(0.12, 0.0, 0.0), handR, 0.05), 0.04);
+
+    // Legs striding.
+    let stride = sin(bt) * 0.14 * energy;
+    d = smin(d, sd_capsule(q, hip + vec3<f32>(-0.09, 0.0, 0.0), vec3<f32>(-0.11 - stride, -1.15, 0.0), 0.055), 0.04);
+    d = smin(d, sd_capsule(q, hip + vec3<f32>(0.09, 0.0, 0.0), vec3<f32>(0.11 + stride, -1.15, 0.0), 0.055), 0.04);
+
     return d;
 }
 
@@ -175,7 +207,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         noise2(p.zx * 9.0 + 3.0) - 0.5,
         noise2(p.xy * 9.0 + 6.0) - 0.5,
     );
-    n = normalize(n + bump * 0.5);
+    n = normalize(n + bump * 0.22);
     // Crevice ambient occlusion: how open is the rock just inside the surface.
     let ao = clamp(-cave(p + n * 0.22) / 0.22, 0.25, 1.0);
 
@@ -183,7 +215,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // makes the shadows dance. ----
     let flick = 0.55 + 0.45 * fbm(vec2<f32>(u.time * 6.0, 0.0)) + u.onset * 0.5;
     let fire = vec3<f32>(
-        0.9 * sin(u.time * 0.8) + 0.30 * sin(u.time * 5.3) + (u.amplitude - 0.2),
+        0.5 * sin(u.time * 0.8) + 0.18 * sin(u.time * 5.3) + (u.amplitude - 0.2) * 0.5,
         -0.55 + 0.10 * sin(u.time * 3.1),
         -0.10,
     );
@@ -192,7 +224,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Warm rock albedo: fbm base + ridged striations + darkened crevices.
     let rough = fbm(p.xy * 1.6 + p.z * 0.5);
     let strata = 1.0 - abs(fbm(p.zy * 2.2 + p.x * 0.3) * 2.0 - 1.0);
-    var albedo = mix(vec3<f32>(0.12, 0.09, 0.07), vec3<f32>(0.30, 0.23, 0.16), rough);
+    var albedo = mix(vec3<f32>(0.16, 0.12, 0.09), vec3<f32>(0.38, 0.30, 0.21), rough);
     albedo = albedo * (0.6 + 0.5 * strata); // mineral banding
     albedo = albedo * ao;                    // dirt in the crevices
 
@@ -203,7 +235,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var col = albedo * vec3<f32>(0.05, 0.06, 0.09); // faint cool ambient
     if (hit) {
-        col = col + albedo * fire_col * diff * pow(sh, 1.5) * fall * 4.2;
+        col = col + albedo * fire_col * diff * pow(sh, 1.4) * fall * 6.5;
         col = col + fire_col * diff * sh * fall * 0.05;
     } else {
         col = vec3<f32>(0.0);
