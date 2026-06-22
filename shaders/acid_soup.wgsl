@@ -97,10 +97,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var uv = in.uv * 2.0 - 1.0;
     uv.x = uv.x * aspect;
 
-    let scale = -1.85 + 0.15 * sin(u.time * 0.2) + u.bass * 0.25;
+    let scale = -1.85 + 0.15 * sin(u.time * 0.1) + u.bass * 0.25;
 
-    // Drift head-on through the structure.
-    let speed = 0.35 + u.beat * 0.5;
+    // Slow drift head-on through the structure.
+    let speed = 0.13 + u.beat * 0.18;
     let z = u.time * speed;
     let ro = vec3<f32>(sin(z * 0.6) * 0.25, cos(z * 0.5) * 0.25, z);
     let fwd = normalize(vec3<f32>(0.15 * cos(z * 0.6), 0.15 * -sin(z * 0.5), 1.0));

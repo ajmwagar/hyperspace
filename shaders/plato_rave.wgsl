@@ -84,18 +84,19 @@ fn map_shape(p: vec3<f32>) -> f32 {
 }
 
 // Soft shadow by marching the shape SDF from a surface point toward a light.
+// More steps + a softer penumbra constant = smoother, higher-quality shadows.
 fn soft_shadow(p: vec3<f32>, lpos: vec3<f32>) -> f32 {
     let dir = normalize(lpos - p);
     let maxt = length(lpos - p);
     var res = 1.0;
     var t = 0.03;
-    for (var i = 0; i < 28; i = i + 1) {
+    for (var i = 0; i < 44; i = i + 1) {
         let h = map_shape(p + dir * t);
         if (h < 0.001) {
             return 0.0;
         }
-        res = min(res, 10.0 * h / t);
-        t = t + clamp(h, 0.02, 0.25);
+        res = min(res, 7.0 * h / t);
+        t = t + clamp(h, 0.015, 0.2);
         if (t > maxt) {
             break;
         }
@@ -185,28 +186,35 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let n2 = normalize(l2 - p);
     let d1 = max(dot(nrm, n1), 0.0);
     let d2 = max(dot(nrm, n2), 0.0);
-    let s1 = soft_shadow(p + nrm * 0.01, l1);
-    let s2 = soft_shadow(p + nrm * 0.01, l2);
+    // Deepen the shadows (sharper penumbra falloff) so the room reads moodier.
+    let s1 = pow(soft_shadow(p + nrm * 0.01, l1), 1.6);
+    let s2 = pow(soft_shadow(p + nrm * 0.01, l2), 1.6);
 
     // Gentle distance falloff so the room stays moody but the back wall is lit
     // enough to read the shadow against.
     let f1 = 1.0 / (1.0 + 0.06 * dot(l1 - p, l1 - p));
     let f2 = 1.0 / (1.0 + 0.10 * dot(l2 - p, l2 - p));
 
-    var col = albedo * 0.06; // ambient
-    col = col + albedo * c1 * d1 * s1 * f1 * 4.5; // key
-    col = col + albedo * c2 * d2 * s2 * f2 * 2.2; // coloured fill
-
-    // Background (ray escaped the room) stays near-black.
-    if (best_t > 1e8) {
+    // Deep, shadowy base: the room is mostly dark and the lights carve it out
+    // of near-black, so the unseen funnel's shadow dominates the frame.
+    var col = albedo * 0.02; // ambient
+    if (best_t < 1e8) {
+        col = col + albedo * c1 * d1 * s1 * f1 * 3.6; // key
+        col = col + albedo * c2 * d2 * s2 * f2 * 1.4; // coloured fill
+        // A faint pool of light around each lamp's footprint adds shape without
+        // lifting the shadows.
+        col = col + c1 * d1 * s1 * f1 * 0.05;
+    } else {
         col = vec3<f32>(0.0);
     }
 
-    // Vignette + faint grain for atmosphere.
-    let vig = 1.0 - dot(in.uv - 0.5, in.uv - 0.5) * 0.8;
-    col = col * vig;
+    // Strong vignette pulls the corners into darkness for a moodier room.
+    let vig = 1.0 - dot(in.uv - 0.5, in.uv - 0.5) * 1.1;
+    col = col * clamp(vig, 0.0, 1.0);
+    // Subtle filmic lift of the deep blacks keeps them from crushing flat.
+    col = col + vec3<f32>(0.006, 0.004, 0.010);
     let grain = fract(sin(dot(in.uv * u.resolution, vec2<f32>(12.9, 78.2))) * 43758.5) - 0.5;
-    col = col + grain * 0.012;
+    col = col + grain * 0.01;
 
     return vec4<f32>(max(col, vec3<f32>(0.0)), 1.0);
 }

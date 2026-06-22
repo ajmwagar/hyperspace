@@ -100,13 +100,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     uv.x = uv.x * aspect;
 
     // Negative scale carves the boxy cathedral; bass morphs it.
-    let scale = -2.0 + 0.12 * sin(u.time * 0.2) + u.bass * 0.2;
+    let scale = -2.0 + 0.12 * sin(u.time * 0.09) + u.bass * 0.2;
 
-    // Camera orbits and "breathes" in and out — plunging toward the structure
-    // and pulling back reads as flying through it. Beats nudge the plunge.
-    let ang = u.time * 0.12;
-    let dist = 4.2 + 2.6 * sin(u.time * 0.13) - u.beat * 0.6;
-    let ro = vec3<f32>(sin(ang) * dist, 1.2 * sin(u.time * 0.09), cos(ang) * dist);
+    // Camera slowly orbits and "breathes" in and out — a languid plunge toward
+    // the structure and back. Beats nudge the plunge.
+    let ang = u.time * 0.05;
+    let dist = 4.2 + 2.6 * sin(u.time * 0.06) - u.beat * 0.5;
+    let ro = vec3<f32>(sin(ang) * dist, 0.7 * sin(u.time * 0.045), cos(ang) * dist);
     let fwd = normalize(-ro);
     let right = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), fwd));
     let up = cross(fwd, right);
