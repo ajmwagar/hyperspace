@@ -123,41 +123,84 @@ fn smin(a: f32, b: f32, k: f32) -> f32 {
     return mix(b, a, h) - k * h * (1.0 - h);
 }
 
-// The UNSEEN occluders: a horizontal row of dancing humanoid figures, built
-// from limbs so their shadows read as people. Tiled along x. Only blocks light.
+// Analytic 2-bone IK: given a root and a tgt an upper/lower bone must reach,
+// return the joint (elbow/knee) position, bending toward `pole`.
+fn ik_joint(root: vec3<f32>, tgt: vec3<f32>, l1: f32, l2: f32, pole: vec3<f32>) -> vec3<f32> {
+    let to = tgt - root;
+    let len = max(length(to), 1e-4);
+    let dlen = clamp(len, abs(l1 - l2) + 0.02, l1 + l2 - 0.02);
+    let dir = to / len;
+    let a = (dlen * dlen + l1 * l1 - l2 * l2) / (2.0 * dlen);
+    let h = sqrt(max(l1 * l1 - a * a, 0.0));
+    var n = pole - dir * dot(pole, dir);
+    n = normalize(n + vec3<f32>(1e-4, 1e-4, 1e-4));
+    return root + dir * a + n * h;
+}
+
+// A jointed limb (two bones) drawn as two tapered capsules through the IK joint.
+fn limb(p: vec3<f32>, root: vec3<f32>, tgt: vec3<f32>, l1: f32, l2: f32, pole: vec3<f32>, r: f32) -> f32 {
+    let j = ik_joint(root, tgt, l1, l2, pole);
+    let d1 = sd_capsule(p, root, j, r);
+    let d2 = sd_capsule(p, j, tgt, r * 0.82);
+    return smin(d1, d2, 0.03);
+}
+
+// The UNSEEN occluders: a horizontal row of dancing humanoids. Each figure
+// dances on its OWN randomized, smooth choreography (per-id tempo + phases),
+// and the arms/legs bend with 2-bone IK so the shadows move like real people.
 fn map_shape(p: vec3<f32>) -> f32 {
     let id = round(p.x / FIG_SPACING);
-    // Local space, centred on each figure (faces the wall, thin in z).
     var q = vec3<f32>(p.x - FIG_SPACING * id, p.y, p.z - FIG_Z);
 
-    let ph = id * 1.7;
-    let bt = u.time * 2.2 + ph;                 // dance tempo
-    let energy = 0.45 + u.amplitude * 0.8 + u.beat * 0.6;
-    let bob = sin(bt * 2.0) * 0.05 * energy;
-    let lean = sin(bt) * 0.12 * energy;         // shoulders sway
-    let girth = 1.0 + u.bass * 0.4;
+    // Per-figure randomness → each one dances differently.
+    let r1 = hash11(id * 1.7 + 0.3);
+    let r2 = hash11(id * 2.7 + 1.1);
+    let r3 = hash11(id * 3.7 + 2.2);
+    let r4 = hash11(id * 4.7 + 3.3);
+    let TAU = 6.28318;
 
-    // Key joints (feet on the cave floor ~ y = -1.15).
-    let hip = vec3<f32>(0.0, -0.35 + bob, 0.0);
-    let sho = vec3<f32>(lean, 0.30 + bob, 0.0);
-    let head = vec3<f32>(lean * 1.1, 0.55 + bob, 0.0);
+    // Smooth, continuous motion only (NO beat spikes) → no jumping. Intensity
+    // is driven by the smooth bands so the dance swells with the music.
+    let tempo = 1.3 + r1 * 1.1;
+    let bt = u.time * tempo;
+    let inten = 0.5 + u.bass * 0.5 + u.amplitude * 0.4;
 
-    // Torso + head.
-    var d = sd_capsule(q, hip, sho, 0.10 * girth);
-    d = smin(d, length(q - head) - 0.11, 0.04);
+    let bob = sin(bt * 2.0 + r2 * TAU) * 0.05 * inten;
+    let sway = sin(bt + r3 * TAU) * 0.10 * inten;
 
-    // Arms swinging/raising with the music (hands up = dancing).
-    let raiseL = sin(bt) * 0.9 + 0.5 * energy;
-    let raiseR = sin(bt + 2.1) * 0.9 + 0.5 * energy;
-    let handL = vec3<f32>(sho.x - 0.30 - 0.08 * sin(bt), sho.y + 0.30 * raiseL, 0.07 * sin(bt));
-    let handR = vec3<f32>(sho.x + 0.30 + 0.08 * sin(bt + 1.3), sho.y + 0.30 * raiseR, -0.07 * sin(bt));
-    d = smin(d, sd_capsule(q, sho + vec3<f32>(-0.12, 0.0, 0.0), handL, 0.05), 0.04);
-    d = smin(d, sd_capsule(q, sho + vec3<f32>(0.12, 0.0, 0.0), handR, 0.05), 0.04);
+    // Core: hips → shoulders → head.
+    let hipC = vec3<f32>(0.0, -0.30 + bob, 0.0);
+    let shoC = vec3<f32>(sway, 0.30 + bob, 0.0);
+    let headC = vec3<f32>(sway * 1.1, 0.56 + bob, 0.0);
+    var d = sd_capsule(q, hipC, shoC, 0.10 * (1.0 + u.bass * 0.3));
+    d = smin(d, length(q - headC) - 0.11, 0.05);
 
-    // Legs striding.
-    let stride = sin(bt) * 0.14 * energy;
-    d = smin(d, sd_capsule(q, hip + vec3<f32>(-0.09, 0.0, 0.0), vec3<f32>(-0.11 - stride, -1.15, 0.0), 0.055), 0.04);
-    d = smin(d, sd_capsule(q, hip + vec3<f32>(0.09, 0.0, 0.0), vec3<f32>(0.11 + stride, -1.15, 0.0), 0.055), 0.04);
+    // Arms: hand targets trace smooth randomized orbits, raised by intensity.
+    let shL = shoC + vec3<f32>(-0.14, 0.02, 0.0);
+    let shR = shoC + vec3<f32>(0.14, 0.02, 0.0);
+    let haL = vec3<f32>(
+        -0.20 - 0.18 * sin(bt * 1.3 + r1 * TAU),
+        shoC.y + 0.12 + (0.10 + 0.40 * (0.5 + 0.5 * sin(bt * 0.9 + r2 * TAU))) * inten,
+        0.12 * sin(bt * 1.1 + r3 * TAU),
+    );
+    let haR = vec3<f32>(
+        0.20 + 0.18 * sin(bt * 1.2 + r3 * TAU),
+        shoC.y + 0.12 + (0.10 + 0.40 * (0.5 + 0.5 * sin(bt * 1.05 + r4 * TAU))) * inten,
+        -0.12 * sin(bt * 1.15 + r1 * TAU),
+    );
+    d = smin(d, limb(q, shL, haL, 0.21, 0.21, vec3<f32>(-0.3, -1.0, 0.5), 0.05), 0.04);
+    d = smin(d, limb(q, shR, haR, 0.21, 0.21, vec3<f32>(0.3, -1.0, 0.5), 0.05), 0.04);
+
+    // Legs: weight-shifting feet that lift in a smooth alternating step; knees
+    // bend forward via the pole vector.
+    let hipL = hipC + vec3<f32>(-0.09, 0.0, 0.0);
+    let hipR = hipC + vec3<f32>(0.09, 0.0, 0.0);
+    let stepL = max(0.0, sin(bt + r2 * TAU));
+    let stepR = max(0.0, sin(bt + r2 * TAU + 3.14159));
+    let ftL = vec3<f32>(-0.12 + sway * 0.5, -1.15 + stepL * 0.20 * inten, 0.06 * stepL);
+    let ftR = vec3<f32>(0.12 + sway * 0.5, -1.15 + stepR * 0.20 * inten, 0.06 * stepR);
+    d = smin(d, limb(q, hipL, ftL, 0.44, 0.44, vec3<f32>(0.0, -0.2, 1.0), 0.055), 0.04);
+    d = smin(d, limb(q, hipR, ftR, 0.44, 0.44, vec3<f32>(0.0, -0.2, 1.0), 0.055), 0.04);
 
     return d;
 }
@@ -213,10 +256,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // ---- The fire: low and front, SWINGING + flickering. This motion is what
     // makes the shadows dance. ----
-    let flick = 0.55 + 0.45 * fbm(vec2<f32>(u.time * 6.0, 0.0)) + u.onset * 0.5;
+    let flick = 0.6 + 0.4 * fbm(vec2<f32>(u.time * 3.0, 0.0)) + u.onset * 0.4;
+    // Slow, smooth swing (drives the dancing shadows) + a gentle bob. The fast
+    // jitter is kept tiny so shadows glide instead of vibrating.
     let fire = vec3<f32>(
-        0.5 * sin(u.time * 0.8) + 0.18 * sin(u.time * 5.3) + (u.amplitude - 0.2) * 0.5,
-        -0.55 + 0.10 * sin(u.time * 3.1),
+        0.55 * sin(u.time * 0.7) + 0.06 * sin(u.time * 2.2) + (u.amplitude - 0.2) * 0.4,
+        -0.55 + 0.06 * sin(u.time * 1.8),
         -0.10,
     );
     let fire_col = vec3<f32>(1.0, 0.45, 0.16) * flick * (1.0 + u.beat * 0.6);
