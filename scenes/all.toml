@@ -1,6 +1,6 @@
-# All shaders — 24 shaders, run on a 6x4 grid.
+# All shaders — 26 shaders, run on a 6x5 grid.
 # Keep this up to date as new shaders are added.
-# Run with: cargo run -- scenes/all.toml 6x4
+# Run with: cargo run -- scenes/all.toml 6x5
 
 [audio]
 # device = "Scarlett"
@@ -79,3 +79,9 @@ shader = "shaders/acid_soup.wgsl"
 
 [grid_23]
 shader = "shaders/fractal_flight.wgsl"
+
+[grid_24]
+shader = "shaders/caustics.wgsl"
+
+[grid_25]
+shader = "shaders/apollonian.wgsl"
