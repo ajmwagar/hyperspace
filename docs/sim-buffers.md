@@ -1,6 +1,13 @@
 # Spec: Multi-Buffer Simulation Pipeline (`sim` feature)
 
-Status: **proposal** · Feature flag: `sim` (default **off**)
+Status: **implemented** · Feature flag: `sim` (default **off**)
+
+Shipped: shared `src/sim.rs` module (`bind_group_layout` + `SimChain`) drives
+both the live engine (`src/renderer.rs`) and the headless renderer
+(`src/offscreen.rs`) — no duplicated sim logic. First consumer is the
+wave-equation pond (`shaders/sim/wave.wgsl` + `shaders/sim/water_shade.wgsl`,
+`scenes/pond.toml`). Build/run with `--features sim` (live) or
+`--features render,sim` (offline).
 
 ## 1. Motivation
 
@@ -159,20 +166,22 @@ cargo run --features sim -- scenes/pond.toml
 cargo run --release --features render,sim --example render -- song.wav out.mp4 scenes/pond.toml
 ```
 
-## 7. Implementation plan (phased)
+## 7. Implementation plan (phased) — **done**
 
-1. **MVP in `offscreen.rs` + `examples/render.rs`** (behind `sim`). This is the
-   headless path I can actually test here (software GPU) and it drives the
-   renders we share. Adds: `BufferSpec` parse, per-buffer ping-pong textures
-   (float), expanded BGL, the execution loop, dummy-fill of unused slots.
-2. **Port to `src/renderer.rs`** (live engine) — same structs/loop; this is the
-   on-hardware path. Lower priority (can't test it here without a display).
-3. **First consumers:** `sim/wave.wgsl` + `sim/water_shade.wgsl` + `scenes/pond.toml`.
-4. **Docs + a naga test extension** to validate `shaders/sim/*.wgsl`.
+1. ✅ **MVP in `offscreen.rs` + `examples/render.rs`** (behind `sim`): the
+   headless path (testable on the software GPU) that drives the renders we
+   share. `BufferConfig` parse, per-buffer float ping-pong textures, expanded
+   BGL, the execution loop, dummy-fill of unused slots.
+2. ✅ **Ported to `src/renderer.rs`** (live engine) using the *same* shared
+   module — display/post bind groups are rebuilt each frame from the chain's
+   current read views, so live and offline behave identically.
+3. ✅ **First consumers:** `sim/wave.wgsl` + `sim/water_shade.wgsl` + `scenes/pond.toml`.
+4. ✅ **Docs + naga test**: `tests/shaders_compile.rs` recurses into
+   `shaders/sim/`, so the sim shaders are validated on every `cargo test`.
 
-Shared code: factor the buffer/exec logic so `renderer.rs` and `offscreen.rs`
-don't duplicate (e.g. a small `sim` module), since they already duplicate the
-single-buffer feedback today.
+Shared code shipped as `src/sim.rs` (the canonical `bind_group_layout` plus the
+`SimChain` ping-pong engine), consumed by both `renderer.rs` and `offscreen.rs`
+— no mirrored sim logic.
 
 ## 8. Scene schema additions (Rust)
 

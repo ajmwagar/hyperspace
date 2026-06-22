@@ -55,6 +55,10 @@ pub struct ShaderPipeline {
     pub video: Option<VideoOverlayState>,
     pub video_sequence: Option<VideoSequenceState>,
     pub script: Option<scripting::ShaderScript>,
+    /// Stateful simulation buffers for this viewport (multi-buffer `sim`
+    /// pipeline). Empty unless the scene declares `[[<viewport>.buffer]]`.
+    #[cfg(feature = "sim")]
+    pub sim_chain: crate::sim::SimChain,
 }
 
 /// The GPU renderer managing all shader pipelines.
@@ -200,58 +204,10 @@ impl Renderer {
         );
         let dummy_texture_view = dummy_texture.create_view(&Default::default());
 
-        // Main bind group layout: uniforms + audio + state + sampler + prev_frame texture
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("hyperspace_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        // Main bind group layout (shared with the offline renderer via
+        // `crate::sim`): uniforms + audio + state + sampler + prev_frame, plus
+        // the four simulation-buffer texture slots (5..8) in `sim` builds.
+        let bind_group_layout = crate::sim::bind_group_layout(&device);
 
         // Blit pipeline (copies offscreen feedback texture to surface viewport)
         let blit_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -396,16 +352,29 @@ impl Renderer {
     }
 
     fn create_bind_group(&self, state_buffer: &wgpu::Buffer, texture_view: &wgpu::TextureView) -> wgpu::BindGroup {
+        #[allow(unused_mut)]
+        let mut entries = vec![
+            wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: self.spectrum_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: state_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(texture_view) },
+        ];
+        // The shared layout exposes sim-buffer slots 5..8 in `sim` builds; bind
+        // them to the dummy texture here (display bind groups for viewports that
+        // actually have sim buffers are rebuilt each frame in render_with_overlay
+        // with the live buffer views).
+        #[cfg(feature = "sim")]
+        for slot in 5u32..=8 {
+            entries.push(wgpu::BindGroupEntry {
+                binding: slot,
+                resource: wgpu::BindingResource::TextureView(&self.dummy_texture_view),
+            });
+        }
         self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: self.spectrum_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: state_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(texture_view) },
-            ],
+            entries: &entries,
         })
     }
 
@@ -649,6 +618,33 @@ impl Renderer {
             None
         };
 
+        // Build the stateful simulation chain (shared with the offline path).
+        // Buffers are sized off the feedback resolution × each buffer's scale.
+        #[cfg(feature = "sim")]
+        let sim_chain = {
+            let chain = crate::sim::SimChain::new(
+                &self.device,
+                &self.bind_group_layout,
+                &viewport.buffers,
+                FEEDBACK_SIZE,
+                FEEDBACK_SIZE,
+                Path::new("."),
+            )?;
+            chain.clear(&self.device, &self.queue);
+            if !viewport.buffers.is_empty() {
+                log::info!("  sim buffers for '{}': {}", viewport.name, viewport.buffers.len());
+            }
+            chain
+        };
+        #[cfg(not(feature = "sim"))]
+        if !viewport.buffers.is_empty() {
+            log::warn!(
+                "scene declares {} sim buffer(s) for '{}' but this build lacks the `sim` feature — ignoring",
+                viewport.buffers.len(),
+                viewport.name
+            );
+        }
+
         self.pipelines.push(ShaderPipeline {
             viewport,
             render_pipeline,
@@ -660,6 +656,8 @@ impl Renderer {
             video,
             video_sequence,
             script,
+            #[cfg(feature = "sim")]
+            sim_chain,
         });
 
         Ok(())
@@ -885,6 +883,24 @@ impl Renderer {
         let fb_w = self.surface_config.width as f32;
         let fb_h = self.surface_config.height as f32;
 
+        // Zeroth: advance the stateful simulation buffers (if any) for every
+        // viewport, so the display/post shaders sample this frame's state. The
+        // sim chain ping-pongs internally; `read_views` then gives the current
+        // state textures for the display bind groups below.
+        #[cfg(feature = "sim")]
+        for pipeline in &mut self.pipelines {
+            if !pipeline.sim_chain.is_empty() {
+                pipeline.sim_chain.step(
+                    &self.device,
+                    &self.queue,
+                    &self.bind_group_layout,
+                    &self.uniform_buffer,
+                    &self.spectrum_buffer,
+                    &pipeline.state_buffer,
+                );
+            }
+        }
+
         // First: submit feedback pipeline offscreen renders (main + post chain)
         // Each pass needs a separate submission so the texture is ready for the next pass.
         for pipeline in &mut self.pipelines {
@@ -894,6 +910,39 @@ impl Renderer {
                 let write_idx = 1 - read_idx;
 
                 {
+                    // In `sim` builds, rebuild the main bind group each frame so
+                    // it samples this frame's simulation buffers (5..8); the
+                    // static bind groups only carry dummies there. Without sim
+                    // buffers (or in non-sim builds) the static group is fine.
+                    #[cfg(feature = "sim")]
+                    let sim_main_bg = if !pipeline.sim_chain.is_empty() {
+                        let bufs = pipeline.sim_chain.read_views();
+                        let mut entries = vec![
+                            wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
+                            wgpu::BindGroupEntry { binding: 1, resource: self.spectrum_buffer.as_entire_binding() },
+                            wgpu::BindGroupEntry { binding: 2, resource: pipeline.state_buffer.as_entire_binding() },
+                            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&fb.views[read_idx]) },
+                        ];
+                        for (k, v) in bufs.iter().enumerate() {
+                            entries.push(wgpu::BindGroupEntry {
+                                binding: 5 + k as u32,
+                                resource: wgpu::BindingResource::TextureView(v),
+                            });
+                        }
+                        Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("feedback_main_sim_bg"),
+                            layout: &self.bind_group_layout,
+                            entries: &entries,
+                        }))
+                    } else {
+                        None
+                    };
+                    #[cfg(feature = "sim")]
+                    let main_bg = sim_main_bg.as_ref().unwrap_or(&pipeline.bind_groups[read_idx]);
+                    #[cfg(not(feature = "sim"))]
+                    let main_bg = &pipeline.bind_groups[read_idx];
+
                     let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("feedback_main"),
                     });
@@ -912,7 +961,7 @@ impl Renderer {
                         occlusion_query_set: None,
                     });
                     pass.set_pipeline(&pipeline.render_pipeline);
-                    pass.set_bind_group(0, &pipeline.bind_groups[read_idx], &[]);
+                    pass.set_bind_group(0, main_bg, &[]);
                     pass.draw(0..3, 0..1);
                     drop(pass);
                     self.queue.submit(std::iter::once(encoder.finish()));
@@ -925,16 +974,29 @@ impl Renderer {
                     let post_write = 1 - post_read;
 
                     // Create a bind group reading the current result (inline to avoid borrow issue)
+                    #[allow(unused_mut)]
+                    let mut post_entries = vec![
+                        wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 1, resource: self.spectrum_buffer.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 2, resource: pipeline.state_buffer.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                        wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&fb.views[post_read]) },
+                    ];
+                    // Post shaders may sample the sim buffers too (5..8).
+                    #[cfg(feature = "sim")]
+                    {
+                        let bufs = pipeline.sim_chain.read_views();
+                        for (k, v) in bufs.iter().enumerate() {
+                            post_entries.push(wgpu::BindGroupEntry {
+                                binding: 5 + k as u32,
+                                resource: wgpu::BindingResource::TextureView(v),
+                            });
+                        }
+                    }
                     let post_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: None,
                         layout: &self.bind_group_layout,
-                        entries: &[
-                            wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
-                            wgpu::BindGroupEntry { binding: 1, resource: self.spectrum_buffer.as_entire_binding() },
-                            wgpu::BindGroupEntry { binding: 2, resource: pipeline.state_buffer.as_entire_binding() },
-                            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-                            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&fb.views[post_read]) },
-                        ],
+                        entries: &post_entries,
                     });
 
                     let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1040,7 +1102,39 @@ impl Renderer {
                 }
 
             } else {
-                // Direct render to surface viewport
+                // Direct render to surface viewport. In `sim` builds, viewports
+                // with simulation buffers rebuild their display bind group here
+                // so it samples this frame's state textures (5..8); slot 4
+                // (prev_frame) is unused on the direct path, so it stays dummy.
+                #[cfg(feature = "sim")]
+                let sim_direct_bg = if !pipeline.sim_chain.is_empty() {
+                    let bufs = pipeline.sim_chain.read_views();
+                    let mut entries = vec![
+                        wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 1, resource: self.spectrum_buffer.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 2, resource: pipeline.state_buffer.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                        wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&self.dummy_texture_view) },
+                    ];
+                    for (k, v) in bufs.iter().enumerate() {
+                        entries.push(wgpu::BindGroupEntry {
+                            binding: 5 + k as u32,
+                            resource: wgpu::BindingResource::TextureView(v),
+                        });
+                    }
+                    Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("direct_sim_bg"),
+                        layout: &self.bind_group_layout,
+                        entries: &entries,
+                    }))
+                } else {
+                    None
+                };
+                #[cfg(feature = "sim")]
+                let direct_bg = sim_direct_bg.as_ref().unwrap_or(&pipeline.bind_groups[0]);
+                #[cfg(not(feature = "sim"))]
+                let direct_bg = &pipeline.bind_groups[0];
+
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some(&vp.name),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1059,7 +1153,7 @@ impl Renderer {
                 pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
                 pass.set_scissor_rect(x, y, w, h);
                 pass.set_pipeline(&pipeline.render_pipeline);
-                pass.set_bind_group(0, &pipeline.bind_groups[0], &[]);
+                pass.set_bind_group(0, direct_bg, &[]);
                 pass.draw(0..3, 0..1);
             }
 

@@ -42,6 +42,42 @@ fn default_video_speed() -> f32 {
     1.0
 }
 
+fn default_buffer_format() -> String {
+    "rgba16f".into()
+}
+fn default_buffer_scale() -> f32 {
+    1.0
+}
+fn default_buffer_steps() -> u32 {
+    1
+}
+fn default_buffer_wrap() -> String {
+    "clamp".into()
+}
+
+/// A persistent simulation buffer (multi-buffer `sim` pipeline). Declared per
+/// viewport as `[[<viewport>.buffer]]` and executed (in declaration order)
+/// before the display shader each frame. Only acted on in `sim` builds.
+#[derive(Debug, Deserialize, Clone)]
+pub struct BufferConfig {
+    /// Label (for logs); the bind slot is the declaration order (buf0..buf3).
+    pub name: String,
+    /// Simulation shader (fullscreen, like a post shader).
+    pub shader: String,
+    /// Texture format: "rgba16f" (default) | "rgba32f" | "r32f".
+    #[serde(default = "default_buffer_format")]
+    pub format: String,
+    /// Resolution as a fraction of the viewport (0.5 = half-res sim).
+    #[serde(default = "default_buffer_scale")]
+    pub scale: f32,
+    /// Sub-steps per frame (sim shader run this many times, ping-ponged).
+    #[serde(default = "default_buffer_steps")]
+    pub steps: u32,
+    /// Edge behaviour: "clamp" (default, reflects) | "repeat" | "mirror".
+    #[serde(default = "default_buffer_wrap")]
+    pub wrap: String,
+}
+
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct AudioConfig {
     /// Audio device name substring to match (e.g. "Scarlett"). Default: system default.
@@ -74,6 +110,10 @@ pub struct OutputConfig {
     pub video_overlay_key: Option<String>,
     /// CV channel to gate video overlay (high = visible)
     pub video_overlay_cv: Option<usize>,
+    /// Simulation buffers (multi-buffer `sim` pipeline), declared as
+    /// `[[<viewport>.buffer]]`. Run before the display shader each frame.
+    #[serde(default)]
+    pub buffer: Vec<BufferConfig>,
 }
 
 /// Display layout mode.
@@ -125,6 +165,8 @@ pub struct Viewport {
     pub video_overlay: Option<String>,
     pub video_overlay_key: Option<String>,
     pub video_overlay_cv: Option<usize>,
+    /// Simulation buffers (multi-buffer `sim` pipeline). Empty = no sim.
+    pub buffers: Vec<BufferConfig>,
     /// Normalized rect within the framebuffer: (x, y, w, h) in 0..1
     pub rect: [f32; 4],
 }
@@ -168,6 +210,7 @@ impl SceneConfig {
                 video_overlay: center.video_overlay.clone(),
                 video_overlay_key: center.video_overlay_key.clone(),
                 video_overlay_cv: center.video_overlay_cv,
+                buffers: center.buffer.clone(),
                 rect,
             });
         }
@@ -185,6 +228,7 @@ impl SceneConfig {
                 video_overlay: sides.video_overlay.clone(),
                 video_overlay_key: sides.video_overlay_key.clone(),
                 video_overlay_cv: sides.video_overlay_cv,
+                buffers: sides.buffer.clone(),
                 rect,
             });
         }
@@ -216,6 +260,7 @@ impl SceneConfig {
                     video_overlay: output.video_overlay.clone(),
                     video_overlay_key: output.video_overlay_key.clone(),
                     video_overlay_cv: output.video_overlay_cv,
+                    buffers: output.buffer.clone(),
                     rect: [
                         col as f32 * cell_w,
                         row as f32 * cell_h,
@@ -242,6 +287,7 @@ impl SceneConfig {
                     video_overlay: output.video_overlay.clone(),
                     video_overlay_key: output.video_overlay_key.clone(),
                     video_overlay_cv: output.video_overlay_cv,
+                    buffers: output.buffer.clone(),
                     rect: [
                         col as f32 * cell_w,
                         row as f32 * cell_h,

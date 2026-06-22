@@ -1,0 +1,32 @@
+# Pond — stateful wave-equation ripples (the `sim` multi-buffer pipeline).
+# Build/run with the `sim` feature:
+#   cargo run --features sim -- scenes/pond.toml
+#   cargo run --release --features render,sim --example render -- track.wav out.mp4 scenes/pond.toml
+#
+# A float "height" buffer runs the discrete wave equation each frame (4
+# sub-steps), reading its own previous state — so a ripple keeps travelling,
+# interfering and reflecting off the walls long after the drop that made it.
+# The center shader only *shades* that height field as water.
+
+[center]
+shader = "shaders/sim/water_shade.wgsl"
+
+[[center.buffer]]
+name = "height"
+shader = "shaders/sim/wave.wgsl"
+format = "rgba16f"
+scale = 1.0
+steps = 4
+wrap = "clamp"
+
+[sides]
+shader = "shaders/sim/water_shade.wgsl"
+symmetric = true
+
+[[sides.buffer]]
+name = "height"
+shader = "shaders/sim/wave.wgsl"
+format = "rgba16f"
+scale = 1.0
+steps = 4
+wrap = "clamp"

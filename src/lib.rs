@@ -12,6 +12,7 @@ pub mod cv;
 pub mod offscreen;
 pub mod renderer;
 pub mod scene;
+pub mod sim;
 pub mod scripting;
 pub mod text;
 pub mod uniforms;
