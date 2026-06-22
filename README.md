@@ -50,6 +50,7 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 <tr>
 <td><img src="assets/caustics.gif" width="320"><br><b>caustics</b><br>Underwater pool-light caustics</td>
 <td><img src="assets/apollonian.gif" width="320"><br><b>apollonian</b><br>Nested-sphere Apollonian gasket</td>
+<td><img src="assets/ripples.gif" width="320"><br><b>ripples</b><br>Raindrop wave-packets, caustic crests</td>
 </tr>
 </table>
 

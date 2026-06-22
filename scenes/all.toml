@@ -1,4 +1,4 @@
-# All shaders — 26 shaders, run on a 6x5 grid.
+# All shaders — 27 shaders, run on a 6x5 grid.
 # Keep this up to date as new shaders are added.
 # Run with: cargo run -- scenes/all.toml 6x5
 
@@ -85,3 +85,6 @@ shader = "shaders/caustics.wgsl"
 
 [grid_25]
 shader = "shaders/apollonian.wgsl"
+
+[grid_26]
+shader = "shaders/ripples.wgsl"

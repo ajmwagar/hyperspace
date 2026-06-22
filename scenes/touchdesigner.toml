@@ -103,3 +103,7 @@ shader = "shaders/caustics.wgsl"
 # Apollonian — nested-sphere Kleinian/Apollonian gasket.
 [grid_20]
 shader = "shaders/apollonian.wgsl"
+
+# Ripples — physics-based raindrop wave packets on water.
+[grid_21]
+shader = "shaders/ripples.wgsl"
