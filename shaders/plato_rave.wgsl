@@ -164,20 +164,20 @@ fn map_shape(p: vec3<f32>) -> f32 {
 
     // Smooth, continuous motion only (NO beat spikes) → no jumping. Intensity
     // is driven by the smooth bands so the dance swells with the music.
-    let tempo = 1.0 + r1 * 0.6;
-    let bt = u.time * tempo;
-    let inten = 0.55 + u.bass * 0.5 + u.amplitude * 0.4;
-
-    // Lock the dance to the beat: a SMOOTH pulse that peaks once per beat
-    // (shared across figures so they hit it together), scaled by loudness so
-    // the hit lands harder when the track does.
     let omega = TAU * BPM / 60.0;
-    let beat_pulse = pow(0.5 + 0.5 * cos(u.time * omega), 5.0) * (0.7 + u.amplitude * 0.6);
-    let alt = 0.5 + 0.5 * cos(u.time * omega * 0.5); // alternates every other beat
+    // Smooth HARMONIC oscillators locked to the tempo. Using a plain cosine
+    // (not a sharpened pulse) the motion eases through its peaks — velocity is
+    // zero at the turning points (the sign-inversions of the derivative) — so
+    // it swings like a pendulum and never jumps. A slight per-figure phase
+    // offset keeps the row from looking robotic.
+    let ph = u.time * omega + (r1 - 0.5) * 0.7;
+    let updown = cos(ph);                  // peaks on the beat
+    let pump = 0.5 + 0.5 * cos(ph);        // 0..1, max on the beat
+    let shift = 0.5 + 0.5 * cos(ph * 0.5); // weight shift, 2-beat period
+    let slow = u.time * (0.6 + r1 * 0.3);  // slow free-style orbit
 
-    // Body drops on the beat (knees bend via IK) then springs back; soft free sway.
-    let bob = -beat_pulse * 0.12 - sin(bt + r2 * TAU) * 0.015;
-    let sway = sin(bt + r3 * TAU) * 0.08 * inten;
+    let bob = -0.09 * updown;
+    let sway = 0.07 * sin(slow + r3 * TAU);
 
     // Core: hips → shoulders → head.
     let hipC = vec3<f32>(0.0, -0.30 + bob, 0.0);
@@ -190,16 +190,16 @@ fn map_shape(p: vec3<f32>) -> f32 {
     let shL = shoC + vec3<f32>(-0.14, 0.02, 0.0);
     let shR = shoC + vec3<f32>(0.14, 0.02, 0.0);
     // Arms pump UP on the beat; a gentle free orbit keeps it from feeling robotic.
-    let raise = 0.10 + beat_pulse * 0.55;
+    let raise = 0.12 + 0.42 * pump;
     let haL = vec3<f32>(
-        -0.20 - 0.16 * sin(bt * 1.3 + r1 * TAU),
-        shoC.y + raise + 0.10 * sin(bt * 0.9 + r2 * TAU),
-        0.12 * sin(bt * 1.1 + r3 * TAU),
+        -0.20 - 0.14 * sin(slow * 1.3 + r1 * TAU),
+        shoC.y + raise + 0.08 * sin(slow * 0.9 + r2 * TAU),
+        0.12 * sin(slow * 1.1 + r3 * TAU),
     );
     let haR = vec3<f32>(
-        0.20 + 0.16 * sin(bt * 1.2 + r3 * TAU),
-        shoC.y + raise + 0.10 * sin(bt * 1.05 + r4 * TAU),
-        -0.12 * sin(bt * 1.15 + r1 * TAU),
+        0.20 + 0.14 * sin(slow * 1.2 + r3 * TAU),
+        shoC.y + raise + 0.08 * sin(slow * 1.05 + r4 * TAU),
+        -0.12 * sin(slow * 1.15 + r1 * TAU),
     );
     d = smin(d, limb(q, shL, haL, 0.21, 0.21, vec3<f32>(-0.3, -1.0, 0.5), 0.05), 0.04);
     d = smin(d, limb(q, shR, haR, 0.21, 0.21, vec3<f32>(0.3, -1.0, 0.5), 0.05), 0.04);
@@ -209,10 +209,8 @@ fn map_shape(p: vec3<f32>) -> f32 {
     let hipL = hipC + vec3<f32>(-0.09, 0.0, 0.0);
     let hipR = hipC + vec3<f32>(0.09, 0.0, 0.0);
     // Feet alternate a little stomp on each beat.
-    let stepL = beat_pulse * alt;
-    let stepR = beat_pulse * (1.0 - alt);
-    let ftL = vec3<f32>(-0.12 + sway * 0.5, -1.15 + stepL * 0.18, 0.06 * stepL);
-    let ftR = vec3<f32>(0.12 + sway * 0.5, -1.15 + stepR * 0.18, 0.06 * stepR);
+    let ftL = vec3<f32>(-0.12 + sway * 0.4, -1.15 + shift * 0.12, 0.05 * shift);
+    let ftR = vec3<f32>(0.12 + sway * 0.4, -1.15 + (1.0 - shift) * 0.12, 0.05 * (1.0 - shift));
     d = smin(d, limb(q, hipL, ftL, 0.44, 0.44, vec3<f32>(0.0, -0.2, 1.0), 0.055), 0.04);
     d = smin(d, limb(q, hipR, ftR, 0.44, 0.44, vec3<f32>(0.0, -0.2, 1.0), 0.055), 0.04);
 
@@ -270,7 +268,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // ---- The fire: low and front, SWINGING + flickering. This motion is what
     // makes the shadows dance. ----
-    let flick = 0.6 + 0.4 * fbm(vec2<f32>(u.time * 3.0, 0.0)) + u.onset * 0.4;
+    let flick = 0.72 + 0.22 * fbm(vec2<f32>(u.time * 1.6, 0.0)) + u.onset * 0.12;
     // Slow, smooth swing (drives the dancing shadows) + a gentle bob. The fast
     // jitter is kept tiny so shadows glide instead of vibrating.
     let fire = vec3<f32>(
