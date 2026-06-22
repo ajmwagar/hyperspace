@@ -111,6 +111,9 @@ fn cave_normal(p: vec3<f32>) -> vec3<f32> {
 
 const FIG_SPACING: f32 = 1.2;
 const FIG_Z: f32 = 2.3;
+// The dancers lock to this tempo. Match it to your track (or, live, drive it
+// from a CV channel / tempo detector).
+const BPM: f32 = 120.0;
 
 fn sd_capsule(p: vec3<f32>, a: vec3<f32>, b: vec3<f32>, r: f32) -> f32 {
     let pa = p - a;
@@ -161,12 +164,20 @@ fn map_shape(p: vec3<f32>) -> f32 {
 
     // Smooth, continuous motion only (NO beat spikes) → no jumping. Intensity
     // is driven by the smooth bands so the dance swells with the music.
-    let tempo = 1.3 + r1 * 1.1;
+    let tempo = 1.0 + r1 * 0.6;
     let bt = u.time * tempo;
-    let inten = 0.5 + u.bass * 0.5 + u.amplitude * 0.4;
+    let inten = 0.55 + u.bass * 0.5 + u.amplitude * 0.4;
 
-    let bob = sin(bt * 2.0 + r2 * TAU) * 0.05 * inten;
-    let sway = sin(bt + r3 * TAU) * 0.10 * inten;
+    // Lock the dance to the beat: a SMOOTH pulse that peaks once per beat
+    // (shared across figures so they hit it together), scaled by loudness so
+    // the hit lands harder when the track does.
+    let omega = TAU * BPM / 60.0;
+    let beat_pulse = pow(0.5 + 0.5 * cos(u.time * omega), 5.0) * (0.7 + u.amplitude * 0.6);
+    let alt = 0.5 + 0.5 * cos(u.time * omega * 0.5); // alternates every other beat
+
+    // Body drops on the beat (knees bend via IK) then springs back; soft free sway.
+    let bob = -beat_pulse * 0.12 - sin(bt + r2 * TAU) * 0.015;
+    let sway = sin(bt + r3 * TAU) * 0.08 * inten;
 
     // Core: hips → shoulders → head.
     let hipC = vec3<f32>(0.0, -0.30 + bob, 0.0);
@@ -178,14 +189,16 @@ fn map_shape(p: vec3<f32>) -> f32 {
     // Arms: hand targets trace smooth randomized orbits, raised by intensity.
     let shL = shoC + vec3<f32>(-0.14, 0.02, 0.0);
     let shR = shoC + vec3<f32>(0.14, 0.02, 0.0);
+    // Arms pump UP on the beat; a gentle free orbit keeps it from feeling robotic.
+    let raise = 0.10 + beat_pulse * 0.55;
     let haL = vec3<f32>(
-        -0.20 - 0.18 * sin(bt * 1.3 + r1 * TAU),
-        shoC.y + 0.12 + (0.10 + 0.40 * (0.5 + 0.5 * sin(bt * 0.9 + r2 * TAU))) * inten,
+        -0.20 - 0.16 * sin(bt * 1.3 + r1 * TAU),
+        shoC.y + raise + 0.10 * sin(bt * 0.9 + r2 * TAU),
         0.12 * sin(bt * 1.1 + r3 * TAU),
     );
     let haR = vec3<f32>(
-        0.20 + 0.18 * sin(bt * 1.2 + r3 * TAU),
-        shoC.y + 0.12 + (0.10 + 0.40 * (0.5 + 0.5 * sin(bt * 1.05 + r4 * TAU))) * inten,
+        0.20 + 0.16 * sin(bt * 1.2 + r3 * TAU),
+        shoC.y + raise + 0.10 * sin(bt * 1.05 + r4 * TAU),
         -0.12 * sin(bt * 1.15 + r1 * TAU),
     );
     d = smin(d, limb(q, shL, haL, 0.21, 0.21, vec3<f32>(-0.3, -1.0, 0.5), 0.05), 0.04);
@@ -195,10 +208,11 @@ fn map_shape(p: vec3<f32>) -> f32 {
     // bend forward via the pole vector.
     let hipL = hipC + vec3<f32>(-0.09, 0.0, 0.0);
     let hipR = hipC + vec3<f32>(0.09, 0.0, 0.0);
-    let stepL = max(0.0, sin(bt + r2 * TAU));
-    let stepR = max(0.0, sin(bt + r2 * TAU + 3.14159));
-    let ftL = vec3<f32>(-0.12 + sway * 0.5, -1.15 + stepL * 0.20 * inten, 0.06 * stepL);
-    let ftR = vec3<f32>(0.12 + sway * 0.5, -1.15 + stepR * 0.20 * inten, 0.06 * stepR);
+    // Feet alternate a little stomp on each beat.
+    let stepL = beat_pulse * alt;
+    let stepR = beat_pulse * (1.0 - alt);
+    let ftL = vec3<f32>(-0.12 + sway * 0.5, -1.15 + stepL * 0.18, 0.06 * stepL);
+    let ftR = vec3<f32>(0.12 + sway * 0.5, -1.15 + stepR * 0.18, 0.06 * stepR);
     d = smin(d, limb(q, hipL, ftL, 0.44, 0.44, vec3<f32>(0.0, -0.2, 1.0), 0.055), 0.04);
     d = smin(d, limb(q, hipR, ftR, 0.44, 0.44, vec3<f32>(0.0, -0.2, 1.0), 0.055), 0.04);
 
