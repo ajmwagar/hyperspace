@@ -1,10 +1,9 @@
-// Plato's Rave — Plato's Cave for the club.
-// An audioreactive shape (a spinning, spectrum-driven funnel) is NEVER drawn
-// to screen. Instead it only blocks light: all you ever see is its shadow cast
-// across the walls and floor of a virtual room. Two coloured club lights throw
-// overlapping coloured shadows; the perspective room reads as real 3D depth.
-// Bass swells the unseen form, the spectrum sculpts its silhouette, beats flash
-// the lights. Inspired by @ojrgb's off-axis shadow-room TouchDesigner work.
+// Plato's Rave — the Allegory of the Cave, dancing. A flickering fire sits low
+// at the front of an organic rock cavern; a horizontal row of swaying figures
+// stands between the fire and the cave wall. The figures are NEVER drawn — you
+// only ever see their tall shadows thrown across the curved rock. The motion is
+// LIGHTING-DRIVEN: the fire swings and flickers (audio-reactive) so the shadows
+// dance side to side. Bass swells the figures, onsets/beats flare the fire.
 
 struct Uniforms {
     time: f32,
@@ -51,55 +50,98 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
     return out;
 }
 
-fn palette(t: f32) -> vec3<f32> {
-    let a = vec3<f32>(0.5, 0.5, 0.5);
-    let b = vec3<f32>(0.5, 0.5, 0.5);
-    let c = vec3<f32>(1.0, 1.0, 1.0);
-    let d = vec3<f32>(0.0, 0.33, 0.67);
-    return a + b * cos(6.28318 * (c * t + d));
+fn hash21(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+fn hash11(x: f32) -> f32 {
+    return fract(sin(x * 91.17) * 43758.5453);
+}
+fn noise2(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let a = hash21(i);
+    let b = hash21(i + vec2<f32>(1.0, 0.0));
+    let c = hash21(i + vec2<f32>(0.0, 1.0));
+    let d = hash21(i + vec2<f32>(1.0, 1.0));
+    let s = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, s.x), mix(c, d, s.x), s.y);
+}
+fn fbm(p_in: vec2<f32>) -> f32 {
+    var p = p_in; var v = 0.0; var a = 0.5;
+    for (var i = 0; i < 3; i = i + 1) {
+        v = v + a * noise2(p);
+        p = p * 2.0 + vec2<f32>(1.7, 9.2);
+        a = a * 0.5;
+    }
+    return v;
 }
 
 fn spec_at(tnorm: f32) -> f32 {
-    let bin = u32(clamp(tnorm, 0.0, 1.0) * 220.0);
-    if (bin < 512u) {
-        return spectrum[bin];
-    }
+    let bin = u32(clamp(tnorm, 0.0, 1.0) * 200.0);
+    if (bin < 512u) { return spectrum[bin]; }
     return 0.0;
 }
 
-// SDF of the UNSEEN shape: a twisting, spectrum-sculpted funnel rising from
-// the floor. Only ever used for shadow occlusion — never shaded.
-fn map_shape(p: vec3<f32>) -> f32 {
-    // Sits in the middle of the room so a front key light projects its
-    // silhouette cleanly onto the back wall.
-    let base = vec2<f32>(0.0, 1.75);
-    let t = clamp((p.y + 1.0) / 2.0, 0.0, 1.0);
-    // Spiral that widens toward the top, like a tornado/funnel.
-    let twist = t * 5.0 + u.time * 1.5;
-    let center = base + vec2<f32>(sin(twist), cos(twist)) * t * 0.22;
-    // Radius sculpted by the spectrum along its height + bass swell + beat.
-    let s = spec_at(t);
-    let radius = mix(0.06, 0.5, t) * (0.6 + u.bass * 0.9 + s * 0.7 + u.beat * 0.3);
-    return length(p.xz - center) - radius;
+// Signed distance to the rock: negative inside the cavern, positive in stone.
+// A wide ellipsoid chamber with cheap lumpy displacement → rounded, organic,
+// not boxy.
+fn cave(p: vec3<f32>) -> f32 {
+    let c = vec3<f32>(0.0, 0.4, 1.9);
+    let r = vec3<f32>(3.3, 1.8, 3.1);
+    var d = (length((p - c) / r) - 1.0) * 1.8;
+    // Layered displacement: big rolling lumps, a ripple, and sharp ridged rock.
+    d = d + (noise2(p.xy * 0.8 + 1.3) - 0.5) * 1.05;
+    d = d + (noise2(p.zy * 1.5 + 7.1) - 0.5) * 0.45;
+    // Ridged octave (1 - |..|) gives craggy stone rather than smooth blobs.
+    d = d - (1.0 - abs(noise2(p.xy * 3.1 + 4.2) * 2.0 - 1.0)) * 0.22;
+    d = d + (noise2(p.zx * 5.5 + 9.0) - 0.5) * 0.12;
+    return d;
 }
 
-// Soft shadow by marching the shape SDF from a surface point toward a light.
-// More steps + a softer penumbra constant = smoother, higher-quality shadows.
+fn cave_normal(p: vec3<f32>) -> vec3<f32> {
+    let e = vec2<f32>(0.02, 0.0);
+    let g = vec3<f32>(
+        cave(p + e.xyy) - cave(p - e.xyy),
+        cave(p + e.yxy) - cave(p - e.yxy),
+        cave(p + e.yyx) - cave(p - e.yyx),
+    );
+    // Interior-facing normal points opposite the outward gradient.
+    return -normalize(g);
+}
+
+const FIG_SPACING: f32 = 0.95;
+const FIG_Z: f32 = 2.0;
+
+// The UNSEEN occluders: a horizontal row of swaying figures on the cave floor.
+// Tiled along x. Only ever blocks light.
+fn map_shape(p: vec3<f32>) -> f32 {
+    let t = clamp((p.y + 1.2) / 2.2, 0.0, 1.0);
+    let id = round(p.x / FIG_SPACING);
+    let lx = p.x - FIG_SPACING * id;
+    let ph = id * 1.7;
+    let sway = sin(u.time * 1.6 + ph) * (0.08 + u.mid * 0.30);
+    let cx = sway * t;
+    let s = spec_at(t);
+    let body = 0.10 * (0.65 + 0.55 * sin(t * 3.14159));
+    let r = body * (1.0 + u.bass * 0.5 + s * 0.35);
+    var d = length(vec2<f32>(lx - cx, p.z - FIG_Z)) - r;
+    let head = -1.2 + (1.7 + 0.5 * hash11(id + 3.0));
+    d = max(d, p.y - head);
+    return d;
+}
+
+// Smooth soft shadow toward the (moving) fire.
 fn soft_shadow(p: vec3<f32>, lpos: vec3<f32>) -> f32 {
     let dir = normalize(lpos - p);
     let maxt = length(lpos - p);
     var res = 1.0;
-    var t = 0.03;
-    for (var i = 0; i < 44; i = i + 1) {
+    var t = 0.04;
+    for (var i = 0; i < 40; i = i + 1) {
         let h = map_shape(p + dir * t);
-        if (h < 0.001) {
-            return 0.0;
-        }
+        if (h < 0.001) { return 0.0; }
         res = min(res, 7.0 * h / t);
-        t = t + clamp(h, 0.015, 0.2);
-        if (t > maxt) {
-            break;
-        }
+        t = t + clamp(h, 0.02, 0.22);
+        if (t > maxt) { break; }
     }
     return clamp(res, 0.0, 1.0);
 }
@@ -110,109 +152,71 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var uv = in.uv * 2.0 - 1.0;
     uv.x = uv.x * aspect;
 
-    // Room half-extents.
-    let XB = 1.35;
-    let YB = 1.0;
-    let ZB = 3.6;
+    // Low camera (a seated prisoner) looking forward and slightly up.
+    let ro = vec3<f32>(0.0, -0.25, -0.3);
+    let rd = normalize(vec3<f32>(uv * 0.72, 1.0) + vec3<f32>(0.0, 0.10, 0.0));
 
-    // Camera looks into the room through the screen "window". A little vertical
-    // offset + sway gives the off-axis, parallax-y depth read.
-    let ro = vec3<f32>(0.18 * sin(u.time * 0.3), 0.12, -0.35);
-    let rd = normalize(vec3<f32>(uv * 0.62, 1.0));
-
-    // Intersect the 5 interior planes; keep the nearest valid hit.
-    var best_t = 1e9;
-    var nrm = vec3<f32>(0.0, 0.0, -1.0);
-    var hid = 0;
-
-    // Floor (y = -YB)
-    if (rd.y < -1e-4) {
-        let t = (-YB - ro.y) / rd.y;
-        let p = ro + rd * t;
-        if (t > 0.0 && t < best_t && abs(p.x) < XB && p.z > 0.0 && p.z < ZB) {
-            best_t = t; nrm = vec3<f32>(0.0, 1.0, 0.0); hid = 1;
-        }
+    // Raymarch to the rock wall (we start inside, so step by distance-to-wall).
+    var t = 0.05;
+    var hit = false;
+    for (var i = 0; i < 90; i = i + 1) {
+        let pos = ro + rd * t;
+        let dw = -cave(pos);
+        if (dw < 0.004) { hit = true; break; }
+        t = t + max(dw * 0.7, 0.02);
+        if (t > 18.0) { break; }
     }
-    // Ceiling (y = YB)
-    if (rd.y > 1e-4) {
-        let t = (YB - ro.y) / rd.y;
-        let p = ro + rd * t;
-        if (t > 0.0 && t < best_t && abs(p.x) < XB && p.z > 0.0 && p.z < ZB) {
-            best_t = t; nrm = vec3<f32>(0.0, -1.0, 0.0); hid = 2;
-        }
-    }
-    // Back wall (z = ZB)
-    if (rd.z > 1e-4) {
-        let t = (ZB - ro.z) / rd.z;
-        let p = ro + rd * t;
-        if (t > 0.0 && t < best_t && abs(p.x) < XB && abs(p.y) < YB) {
-            best_t = t; nrm = vec3<f32>(0.0, 0.0, -1.0); hid = 3;
-        }
-    }
-    // Left wall (x = -XB)
-    if (rd.x < -1e-4) {
-        let t = (-XB - ro.x) / rd.x;
-        let p = ro + rd * t;
-        if (t > 0.0 && t < best_t && abs(p.y) < YB && p.z > 0.0 && p.z < ZB) {
-            best_t = t; nrm = vec3<f32>(1.0, 0.0, 0.0); hid = 4;
-        }
-    }
-    // Right wall (x = XB)
-    if (rd.x > 1e-4) {
-        let t = (XB - ro.x) / rd.x;
-        let p = ro + rd * t;
-        if (t > 0.0 && t < best_t && abs(p.y) < YB && p.z > 0.0 && p.z < ZB) {
-            best_t = t; nrm = vec3<f32>(-1.0, 0.0, 0.0); hid = 5;
-        }
-    }
+    let p = ro + rd * t;
+    var n = cave_normal(p);
+    // Fine rock bump-mapping: perturb the shading normal with high-freq noise
+    // so the firelight breaks across craggy stone detail.
+    let bump = vec3<f32>(
+        noise2(p.yz * 9.0) - 0.5,
+        noise2(p.zx * 9.0 + 3.0) - 0.5,
+        noise2(p.xy * 9.0 + 6.0) - 0.5,
+    );
+    n = normalize(n + bump * 0.5);
+    // Crevice ambient occlusion: how open is the rock just inside the surface.
+    let ao = clamp(-cave(p + n * 0.22) / 0.22, 0.25, 1.0);
 
-    let p = ro + rd * best_t;
+    // ---- The fire: low and front, SWINGING + flickering. This motion is what
+    // makes the shadows dance. ----
+    let flick = 0.55 + 0.45 * fbm(vec2<f32>(u.time * 6.0, 0.0)) + u.onset * 0.5;
+    let fire = vec3<f32>(
+        0.9 * sin(u.time * 0.8) + 0.30 * sin(u.time * 5.3) + (u.amplitude - 0.2),
+        -0.55 + 0.10 * sin(u.time * 3.1),
+        -0.10,
+    );
+    let fire_col = vec3<f32>(1.0, 0.45, 0.16) * flick * (1.0 + u.beat * 0.6);
 
-    // Key light out front (behind the camera) shines onto the back wall, so
-    // the unseen funnel throws a sharp central shadow. A coloured fill light
-    // off to the side adds a second, softer coloured shadow. Colours cycle;
-    // beat flares them.
-    let l1 = vec3<f32>(0.25 * sin(u.time * 0.4), 0.35, -0.8);
-    let l2 = vec3<f32>(1.1 * sin(u.time * 0.5), 0.7, 0.1);
-    let c1 = mix(vec3<f32>(1.0), palette(u.time * 0.05 + u.mid * 0.3), 0.45) * (1.0 + u.beat * 0.6);
-    let c2 = palette(u.time * 0.05 + 0.45 + u.onset * 0.3) * (1.0 + u.beat);
+    // Warm rock albedo: fbm base + ridged striations + darkened crevices.
+    let rough = fbm(p.xy * 1.6 + p.z * 0.5);
+    let strata = 1.0 - abs(fbm(p.zy * 2.2 + p.x * 0.3) * 2.0 - 1.0);
+    var albedo = mix(vec3<f32>(0.12, 0.09, 0.07), vec3<f32>(0.30, 0.23, 0.16), rough);
+    albedo = albedo * (0.6 + 0.5 * strata); // mineral banding
+    albedo = albedo * ao;                    // dirt in the crevices
 
-    // Matte room surface; floor a touch darker, back wall a soft gradient.
-    var albedo = vec3<f32>(0.18);
-    if (hid == 1) { albedo = vec3<f32>(0.12); }
-    if (hid == 3) { albedo = mix(vec3<f32>(0.22), vec3<f32>(0.10), (p.y + 1.0) * 0.5); }
+    let ldir = normalize(fire - p);
+    let diff = max(dot(n, ldir), 0.0);
+    let sh = soft_shadow(p + n * 0.02, fire);
+    let fall = 1.0 / (1.0 + 0.12 * dot(fire - p, fire - p));
 
-    let n1 = normalize(l1 - p);
-    let n2 = normalize(l2 - p);
-    let d1 = max(dot(nrm, n1), 0.0);
-    let d2 = max(dot(nrm, n2), 0.0);
-    // Deepen the shadows (sharper penumbra falloff) so the room reads moodier.
-    let s1 = pow(soft_shadow(p + nrm * 0.01, l1), 1.6);
-    let s2 = pow(soft_shadow(p + nrm * 0.01, l2), 1.6);
-
-    // Gentle distance falloff so the room stays moody but the back wall is lit
-    // enough to read the shadow against.
-    let f1 = 1.0 / (1.0 + 0.06 * dot(l1 - p, l1 - p));
-    let f2 = 1.0 / (1.0 + 0.10 * dot(l2 - p, l2 - p));
-
-    // Deep, shadowy base: the room is mostly dark and the lights carve it out
-    // of near-black, so the unseen funnel's shadow dominates the frame.
-    var col = albedo * 0.02; // ambient
-    if (best_t < 1e8) {
-        col = col + albedo * c1 * d1 * s1 * f1 * 3.6; // key
-        col = col + albedo * c2 * d2 * s2 * f2 * 1.4; // coloured fill
-        // A faint pool of light around each lamp's footprint adds shape without
-        // lifting the shadows.
-        col = col + c1 * d1 * s1 * f1 * 0.05;
+    var col = albedo * vec3<f32>(0.05, 0.06, 0.09); // faint cool ambient
+    if (hit) {
+        col = col + albedo * fire_col * diff * pow(sh, 1.5) * fall * 4.2;
+        col = col + fire_col * diff * sh * fall * 0.05;
     } else {
         col = vec3<f32>(0.0);
     }
 
-    // Strong vignette pulls the corners into darkness for a moodier room.
-    let vig = 1.0 - dot(in.uv - 0.5, in.uv - 0.5) * 1.1;
+    // Direct ember glow where the fire sits in frame.
+    let fdist = length(p - fire);
+    col = col + vec3<f32>(1.0, 0.5, 0.2) * flick * 0.012 / (0.05 + fdist * fdist);
+
+    // Moody vignette + faint grain.
+    let vig = 1.0 - dot(in.uv - 0.5, in.uv - 0.5) * 1.0;
     col = col * clamp(vig, 0.0, 1.0);
-    // Subtle filmic lift of the deep blacks keeps them from crushing flat.
-    col = col + vec3<f32>(0.006, 0.004, 0.010);
+    col = col + vec3<f32>(0.008, 0.005, 0.004);
     let grain = fract(sin(dot(in.uv * u.resolution, vec2<f32>(12.9, 78.2))) * 43758.5) - 0.5;
     col = col + grain * 0.01;
 
