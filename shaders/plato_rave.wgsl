@@ -162,42 +162,50 @@ fn map_shape(p: vec3<f32>) -> f32 {
     let r4 = hash11(id * 4.7 + 3.3);
     let TAU = 6.28318;
 
-    // Smooth, continuous motion only (NO beat spikes) → no jumping. Intensity
-    // is driven by the smooth bands so the dance swells with the music.
-    let omega = TAU * BPM / 60.0;
-    // Smooth HARMONIC oscillators locked to the tempo. Using a plain cosine
-    // (not a sharpened pulse) the motion eases through its peaks — velocity is
-    // zero at the turning points (the sign-inversions of the derivative) — so
-    // it swings like a pendulum and never jumps. A slight per-figure phase
-    // offset keeps the row from looking robotic.
-    let ph = u.time * omega + (r1 - 0.5) * 0.7;
+    // Dance phase. Prefer a host-supplied, beat-tracked phase (cv[0].x in 0..1,
+    // with cv[0].y as an "active" flag) so the dancers PHASE-LOCK to the real
+    // track and follow tempo drift; otherwise free-run at the BPM const.
+    var dphase = u.time * (TAU * BPM / 60.0);
+    if (u.cv[0].y > 0.5) { dphase = u.cv[0].x * TAU; }
+    // Slight per-figure phase offset so the row isn't robotic.
+    let ph = dphase + (r1 - 0.5) * 0.7;
+
+    // Harmonic oscillators (plain cosine → eases through peaks, no jumping).
     let updown = cos(ph);                  // peaks on the beat
     let pump = 0.5 + 0.5 * cos(ph);        // 0..1, max on the beat
     let shift = 0.5 + 0.5 * cos(ph * 0.5); // weight shift, 2-beat period
     let slow = u.time * (0.6 + r1 * 0.3);  // slow free-style orbit
 
-    let bob = -0.09 * updown;
-    let sway = 0.07 * sin(slow + r3 * TAU);
+    // Per-figure dance STYLE — each person emphasises a different move.
+    let wBounce = hash11(id * 5.1 + 0.7);  // knee bounce / vertical
+    let wReach = hash11(id * 6.7 + 1.3);   // arms thrown up
+    let wSway = hash11(id * 7.9 + 2.9);    // side-to-side
+    let wStep = hash11(id * 9.1 + 3.7);    // footwork
+    let height = 0.92 + 0.16 * hash11(id * 8.3 + 4.1); // body height
 
-    // Core: hips → shoulders → head.
+    // Bouncers bob harder; swayers swing side to side on the beat.
+    let bob = -(0.04 + 0.10 * wBounce) * updown;
+    let sway = (0.03 + 0.06 * wSway) * sin(slow + r3 * TAU) + (0.07 * wSway) * updown;
+
+    // Core: hips → shoulders → head (taller/shorter per figure).
     let hipC = vec3<f32>(0.0, -0.30 + bob, 0.0);
-    let shoC = vec3<f32>(sway, 0.30 + bob, 0.0);
-    let headC = vec3<f32>(sway * 1.1, 0.56 + bob, 0.0);
+    let shoC = vec3<f32>(sway, (0.30 + bob) * height, 0.0);
+    let headC = vec3<f32>(sway * 1.1, (0.56 + bob) * height + wBounce * 0.05 * updown, 0.0);
     var d = sd_capsule(q, hipC, shoC, 0.10 * (1.0 + u.bass * 0.3));
     d = smin(d, length(q - headC) - 0.11, 0.05);
 
-    // Arms: hand targets trace smooth randomized orbits, raised by intensity.
+    // Arms: reachers throw their hands up; swayers spread them wider.
     let shL = shoC + vec3<f32>(-0.14, 0.02, 0.0);
     let shR = shoC + vec3<f32>(0.14, 0.02, 0.0);
-    // Arms pump UP on the beat; a gentle free orbit keeps it from feeling robotic.
-    let raise = 0.12 + 0.42 * pump;
+    let raise = 0.06 + (0.12 + 0.45 * wReach) * pump;
+    let armX = 0.18 + 0.10 * wSway;
     let haL = vec3<f32>(
-        -0.20 - 0.14 * sin(slow * 1.3 + r1 * TAU),
+        -armX - 0.12 * sin(slow * 1.3 + r1 * TAU),
         shoC.y + raise + 0.08 * sin(slow * 0.9 + r2 * TAU),
         0.12 * sin(slow * 1.1 + r3 * TAU),
     );
     let haR = vec3<f32>(
-        0.20 + 0.14 * sin(slow * 1.2 + r3 * TAU),
+        armX + 0.12 * sin(slow * 1.2 + r3 * TAU),
         shoC.y + raise + 0.08 * sin(slow * 1.05 + r4 * TAU),
         -0.12 * sin(slow * 1.15 + r1 * TAU),
     );
@@ -209,8 +217,9 @@ fn map_shape(p: vec3<f32>) -> f32 {
     let hipL = hipC + vec3<f32>(-0.09, 0.0, 0.0);
     let hipR = hipC + vec3<f32>(0.09, 0.0, 0.0);
     // Feet alternate a little stomp on each beat.
-    let ftL = vec3<f32>(-0.12 + sway * 0.4, -1.15 + shift * 0.12, 0.05 * shift);
-    let ftR = vec3<f32>(0.12 + sway * 0.4, -1.15 + (1.0 - shift) * 0.12, 0.05 * (1.0 - shift));
+    let lift = 0.05 + 0.16 * wStep;
+    let ftL = vec3<f32>(-0.12 + sway * 0.4, -1.15 + shift * lift, 0.05 * shift);
+    let ftR = vec3<f32>(0.12 + sway * 0.4, -1.15 + (1.0 - shift) * lift, 0.05 * (1.0 - shift));
     d = smin(d, limb(q, hipL, ftL, 0.44, 0.44, vec3<f32>(0.0, -0.2, 1.0), 0.055), 0.04);
     d = smin(d, limb(q, hipR, ftR, 0.44, 0.44, vec3<f32>(0.0, -0.2, 1.0), 0.055), 0.04);
 

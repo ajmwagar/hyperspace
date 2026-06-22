@@ -183,6 +183,14 @@ struct BandAnalyzer {
     onset: f32,
     sub_bass: f32,
     presence: f32,
+    // Beat-phase tracker (a small PLL): a continuous phase that advances at the
+    // running tempo and is nudged toward each detected beat, so downstream
+    // shaders can phase-lock to the track and follow tempo drift.
+    time_acc: f32,
+    period: f32,
+    last_beat_time: f32,
+    beat_phase: f32,
+    prev_beat: f32,
 }
 
 impl BandAnalyzer {
@@ -195,10 +203,15 @@ impl BandAnalyzer {
             onset: 0.0,
             sub_bass: 0.0,
             presence: 0.0,
+            time_acc: 0.0,
+            period: 0.5, // 120 BPM until the tracker learns the tempo
+            last_beat_time: 0.0,
+            beat_phase: 0.0,
+            prev_beat: 0.0,
         }
     }
 
-    fn update(&mut self, buf: &[f32; AUDIO_BUFFER_SIZE]) -> ScopeBands {
+    fn update(&mut self, buf: &[f32; AUDIO_BUFFER_SIZE], dt: f32) -> ScopeBands {
         let bin_hz = self.sample_rate as f32 / FFT_SIZE as f32;
         let band = |from_hz: f32, to_hz: f32| -> f32 {
             let from = (from_hz / bin_hz) as usize;
@@ -249,6 +262,25 @@ impl BandAnalyzer {
         self.sub_bass = self.sub_bass * 0.6 + sub_bass * 0.4;
         self.presence = self.presence * 0.5 + presence * 0.5;
 
+        // ---- Beat-phase PLL ----
+        self.time_acc += dt;
+        // Advance phase at the current tempo estimate.
+        self.beat_phase += dt / self.period.max(0.1);
+        // On a freshly detected beat (rising edge), learn the period and nudge
+        // the phase toward a whole beat. A gentle nudge keeps the phase smooth.
+        if self.beat > 0.95 && self.prev_beat <= 0.95 {
+            let interval = self.time_acc - self.last_beat_time;
+            if (0.25..1.6).contains(&interval) {
+                self.period = self.period * 0.7 + interval * 0.3;
+            }
+            self.last_beat_time = self.time_acc;
+            let frac = self.beat_phase - self.beat_phase.floor();
+            let err = if frac > 0.5 { frac - 1.0 } else { frac };
+            self.beat_phase -= err * 0.15; // pull ~15% toward the beat
+        }
+        self.prev_beat = self.beat;
+        let phase01 = self.beat_phase - self.beat_phase.floor();
+
         ScopeBands {
             amplitude,
             bass,
@@ -258,6 +290,7 @@ impl BandAnalyzer {
             onset: self.onset,
             sub_bass: self.sub_bass,
             presence: self.presence,
+            beat_phase: phase01,
         }
     }
 }
@@ -386,7 +419,7 @@ async fn run(
         let center = ((time as f64) * audio.sample_rate as f64) as usize;
 
         compute_audio_buffer(&audio, center, &fft, &mut scratch, &mut audio_data);
-        let bands = analyzer.update(&audio_data);
+        let bands = analyzer.update(&audio_data, 1.0 / fps as f32);
 
         scope.render(&device, &queue, &target_view, &audio_data, time, bands);
 

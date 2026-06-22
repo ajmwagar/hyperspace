@@ -149,10 +149,17 @@ impl ScopeRenderer {
     ) {
         queue.write_buffer(&self.audio_buf_gpu, 0, bytemuck::cast_slice(audio_buf));
 
+        // Expose the beat phase (and an "active" flag) through cv[0] so shaders
+        // can phase-lock to the track. cv layout: [phase, active, 0, 0, ...].
+        let mut cv = [0.0f32; 8];
+        cv[0] = bands.beat_phase;
+        cv[1] = 1.0;
+
         let u = Uniforms {
             time,
             delta_time: 1.0 / 30.0,
             resolution: [self.width as f32, self.height as f32],
+            cv,
             amplitude: bands.amplitude,
             beat: bands.beat,
             bass: bands.bass,
@@ -234,6 +241,9 @@ pub struct ScopeBands {
     pub onset: f32,
     pub sub_bass: f32,
     pub presence: f32,
+    /// Continuous beat phase in 0..1 from the host's beat tracker. Surfaced to
+    /// shaders via `cv[0]` so they can phase-lock the look to the track.
+    pub beat_phase: f32,
 }
 
 /// Render the main shader then the post chain into the feedback textures,
