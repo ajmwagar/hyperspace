@@ -32,6 +32,8 @@ struct Pipeline {
     fb_textures: [wgpu::Texture; 2],
     fb_views: [wgpu::TextureView; 2],
     result_idx: usize,
+    #[cfg(feature = "sim")]
+    sim_chain: crate::sim::SimChain,
 }
 
 /// Headless hyperspace scene renderer driven by a caller-owned device.
@@ -92,7 +94,7 @@ impl ScopeRenderer {
             ..Default::default()
         });
 
-        let bgl = bind_group_layout(device);
+        let bgl = crate::sim::bind_group_layout(device);
 
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("uniforms"),
@@ -149,19 +151,47 @@ impl ScopeRenderer {
     ) {
         queue.write_buffer(&self.audio_buf_gpu, 0, bytemuck::cast_slice(audio_buf));
 
+        // Expose the beat phase (and an "active" flag) through cv[0] so shaders
+        // can phase-lock to the track. cv layout: [phase, active, 0, 0, ...].
+        let mut cv = [0.0f32; 8];
+        cv[0] = bands.beat_phase;
+        cv[1] = 1.0;
+
         let u = Uniforms {
             time,
             delta_time: 1.0 / 30.0,
             resolution: [self.width as f32, self.height as f32],
+            cv,
             amplitude: bands.amplitude,
+            beat: bands.beat,
             bass: bands.bass,
             mid: bands.mid,
             high: bands.high,
             amplitude_l: bands.amplitude,
             amplitude_r: bands.amplitude,
+            bass_l: bands.bass,
+            bass_r: bands.bass,
+            mid_l: bands.mid,
+            mid_r: bands.mid,
+            high_l: bands.high,
+            high_r: bands.high,
+            onset: bands.onset,
+            sub_bass: bands.sub_bass,
+            presence: bands.presence,
             ..Uniforms::default()
         };
         queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(&u));
+
+        // Advance the simulation buffers (if any) before the display shader.
+        #[cfg(feature = "sim")]
+        self.pipeline.sim_chain.step(
+            device,
+            queue,
+            &self.bgl,
+            &self.uniform_buf,
+            &self.audio_buf_gpu,
+            &self.pipeline.state_buffer,
+        );
 
         render_frame(
             device,
@@ -211,15 +241,22 @@ impl ScopeRenderer {
     }
 }
 
-/// Secondary band-energy uniforms (amplitude/bass/mid/high). These are derived
-/// from the audio buffer by the caller; the scene look is driven mainly by the
-/// audio buffer the shaders read directly.
+/// Secondary band-energy uniforms. These are derived from the audio buffer by
+/// the caller; the scene look is driven mainly by the audio buffer the shaders
+/// read directly, but beat/onset-synced effects need these populated.
 #[derive(Clone, Copy, Default)]
 pub struct ScopeBands {
     pub amplitude: f32,
     pub bass: f32,
     pub mid: f32,
     pub high: f32,
+    pub beat: f32,
+    pub onset: f32,
+    pub sub_bass: f32,
+    pub presence: f32,
+    /// Continuous beat phase in 0..1 from the host's beat tracker. Surfaced to
+    /// shaders via `cv[0]` so they can phase-lock the look to the track.
+    pub beat_phase: f32,
 }
 
 /// Render the main shader then the post chain into the feedback textures,
@@ -234,31 +271,41 @@ fn render_frame(
     pipeline: &mut Pipeline,
 ) {
     let make_bg = |read_view: &wgpu::TextureView| {
+        #[cfg(feature = "sim")]
+        let bufs = pipeline.sim_chain.read_views();
+        let mut entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: audio_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: pipeline.state_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(read_view),
+            },
+        ];
+        #[cfg(feature = "sim")]
+        for (k, v) in bufs.iter().enumerate() {
+            entries.push(wgpu::BindGroupEntry {
+                binding: 5 + k as u32,
+                resource: wgpu::BindingResource::TextureView(v),
+            });
+        }
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: audio_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: pipeline.state_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(read_view),
-                },
-            ],
+            entries: &entries,
         })
     };
 
@@ -423,6 +470,24 @@ fn build_pipeline(
         queue.submit(std::iter::once(enc.finish()));
     }
 
+    // Build the simulation chain (no-op when the viewport declares no buffers).
+    #[cfg(feature = "sim")]
+    let sim_chain = {
+        let chain = crate::sim::SimChain::new(device, bgl, &vp.buffers, width, height, assets_dir)?;
+        chain.clear(device, queue);
+        if !vp.buffers.is_empty() {
+            log::info!("  sim buffers: {}", vp.buffers.len());
+        }
+        chain
+    };
+    #[cfg(not(feature = "sim"))]
+    if !vp.buffers.is_empty() {
+        log::warn!(
+            "  scene declares {} sim buffer(s) but this build lacks the `sim` feature — ignoring",
+            vp.buffers.len()
+        );
+    }
+
     Ok(Pipeline {
         main,
         post,
@@ -430,6 +495,8 @@ fn build_pipeline(
         fb_textures: [fb_a, fb_b],
         fb_views: [view_a, view_b],
         result_idx: 0,
+        #[cfg(feature = "sim")]
+        sim_chain,
     })
 }
 
@@ -531,58 +598,4 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     });
 
     (bgl, pipeline)
-}
-
-fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("render_bgl"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 3,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 4,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-        ],
-    })
 }

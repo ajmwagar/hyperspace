@@ -17,27 +17,33 @@
 <td><img src="fractal_pulse.gif" width="200"><br><b>fractal_pulse</b><br>Julia set fractal that breathes with aud</td>
 </tr>
 <tr>
+<td><img src="fractal_zoom.gif" width="200"><br><b>fractal_zoom</b><br>an endless zoom into the Mandelbrot set </td>
 <td><img src="gforce.gif" width="200"><br><b>gforce</b><br>feedback visualizer inspired by SoundSpe</td>
 <td><img src="gradient_flow.gif" width="200"><br><b>gradient_flow</b><br>ShaderGradient-inspired flowing mesh gra</td>
-<td><img src="hyperdrive.gif" width="200"><br><b>hyperdrive</b><br>Star Wars lightspeed jump. Stars streak </td>
 </tr>
 <tr>
+<td><img src="hyperdrive.gif" width="200"><br><b>hyperdrive</b><br>Star Wars lightspeed jump. Stars streak </td>
 <td><img src="hyperspace_tunnel.gif" width="200"><br><b>hyperspace_tunnel</b><br></td>
+<td><img src="ink_flow.gif" width="200"><br><b>ink_flow</b><br>coloured ink/dye swirling in water, a cu</td>
+</tr>
+<tr>
 <td><img src="lava_lamp.gif" width="200"><br><b>lava_lamp</b><br>soft metaball blobs that rise, merge, an</td>
+<td><img src="liquid_chrome.gif" width="200"><br><b>liquid_chrome</b><br>raymarched metaballs with a reflective, </td>
 <td><img src="neon_grid.gif" width="200"><br><b>neon_grid</b><br>retrowave infinite grid with audio-react</td>
 </tr>
 <tr>
 <td><img src="neon_string.gif" width="200"><br><b>neon_string</b><br>a single luminous arc that vibrates with</td>
+<td><img src="neon_tunnel.gif" width="200"><br><b>neon_tunnel</b><br>a 3D volumetric flythrough of a glowing </td>
 <td><img src="neural_link.gif" width="200"><br><b>neural_link</b><br>two chrome mannequin busts connected by </td>
-<td><img src="oscilloscope.gif" width="200"><br><b>oscilloscope</b><br>real waveform display with green CRT pho</td>
 </tr>
 <tr>
+<td><img src="oscilloscope.gif" width="200"><br><b>oscilloscope</b><br>real waveform display with green CRT pho</td>
 <td><img src="plasma_vortex.gif" width="200"><br><b>plasma_vortex</b><br>swirling plasma tendrils that react to a</td>
 <td><img src="point_cloud.gif" width="200"><br><b>point_cloud</b><br>renders video content as scattered lumin</td>
-<td><img src="reaction_diffusion.gif" width="200"><br><b>reaction_diffusion</b><br>Gray-Scott system, a TouchDesigner feedb</td>
 </tr>
 <tr>
+<td><img src="reaction_diffusion.gif" width="200"><br><b>reaction_diffusion</b><br>Gray-Scott system, a TouchDesigner feedb</td>
 <td><img src="video_player.gif" width="200"><br><b>video_player</b><br>displays video content from prev_frame t</td>
-<td><img src="voronoi_cells.gif" width="200"><br><b>voronoi_cells</b><br>TouchDesigner-style animated Voronoi dia</td>
+<td><img src="voronoi_cells.gif" width="200"><br><b>voronoi_cells</b><br>a cut-gem / shattered-crystal Voronoi mo</td>
 </tr>
 </table>

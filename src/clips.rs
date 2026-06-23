@@ -105,6 +105,7 @@ impl ClipBoard {
                     video_overlay: None,
                     video_overlay_key: None,
                     video_overlay_cv: None,
+                    buffers: Vec::new(),
                     rect: [0.0, 0.0, 1.0, 1.0], // full screen
                 }]
             }
@@ -120,6 +121,7 @@ impl ClipBoard {
                     video_overlay: None,
                     video_overlay_key: None,
                     video_overlay_cv: None,
+                    buffers: Vec::new(),
                     rect: [0.0, 0.0, 1.0, 1.0], // full screen for clips
                 }]
             }

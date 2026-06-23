@@ -1,7 +1,8 @@
 # TouchDesigner-inspired — new generators + post effects.
-# Shows off the gradient mesh, Voronoi, reaction-diffusion and the
-# ASCII / dither / halftone / chromatic / edge post stack.
-# Run as a grid: cargo run -- scenes/touchdesigner.toml 3x2
+# Shows off the gradient mesh, Voronoi, reaction-diffusion, liquid chrome and
+# the full post stack (ASCII / dither / halftone / chromatic / edge /
+# kaleidoscope / shockwave / glass / bloom / vhs / crt).
+# Run as a grid: cargo run -- scenes/touchdesigner.toml 5x4
 
 [audio]
 device = "Blackhole 2ch"
@@ -36,3 +37,73 @@ post = ["shaders/post/chromatic.wgsl"]
 [grid_5]
 shader = "shaders/plasma_vortex.wgsl"
 post = ["shaders/post/ascii.wgsl", "shaders/post/crt.wgsl"]
+
+# Liquid chrome metaballs — raymarched iridescent mercury.
+[grid_6]
+shader = "shaders/liquid_chrome.wgsl"
+
+# Voronoi folded into a breathing kaleidoscope mandala.
+[grid_7]
+shader = "shaders/voronoi_cells.wgsl"
+post = ["shaders/post/kaleidoscope.wgsl"]
+
+# Plasma with a beat-drop shockwave — rings punch out on every beat.
+[grid_8]
+shader = "shaders/plasma_vortex.wgsl"
+post = ["shaders/post/shockwave.wgsl"]
+
+# 3D neon tunnel flythrough, glowing harder through a bloom pass.
+[grid_9]
+shader = "shaders/neon_tunnel.wgsl"
+post = ["shaders/post/bloom.wgsl"]
+
+# Ink-in-water curl-noise fluid.
+[grid_10]
+shader = "shaders/ink_flow.wgsl"
+
+# Morphing Julia fractal folded into a kaleidoscope.
+[grid_11]
+shader = "shaders/fractal_zoom.wgsl"
+post = ["shaders/post/kaleidoscope.wgsl"]
+
+# Voronoi shattering like glass on every beat.
+[grid_12]
+shader = "shaders/voronoi_cells.wgsl"
+post = ["shaders/post/glass_shatter.wgsl"]
+
+# Tunnel through a worn VHS tape into a CRT — the full retro stack.
+[grid_13]
+shader = "shaders/hyperspace_tunnel.wgsl"
+post = ["shaders/post/vhs.wgsl", "shaders/post/crt.wgsl"]
+
+# Plato's Rave — audioreactive funnel rendered only as shadows on a virtual room.
+[grid_14]
+shader = "shaders/plato_rave.wgsl"
+
+# Mandelbulb — classic 3D fractal, power morphs to the music.
+[grid_15]
+shader = "shaders/mandelbulb.wgsl"
+
+# Mandelbox — folded-box fractal cathedral.
+[grid_16]
+shader = "shaders/mandelbox.wgsl"
+
+# Fractal Flight — bar-synced run through an endless fractal lattice.
+[grid_17]
+shader = "shaders/fractal_flight.wgsl"
+
+# Acid Soup — foggy Mandelbox melted into churning soup.
+[grid_18]
+shader = "shaders/acid_soup.wgsl"
+
+# Caustics — dreamy underwater pool light.
+[grid_19]
+shader = "shaders/caustics.wgsl"
+
+# Apollonian — nested-sphere Kleinian/Apollonian gasket.
+[grid_20]
+shader = "shaders/apollonian.wgsl"
+
+# Ripples — physics-based raindrop wave packets on water.
+[grid_21]
+shader = "shaders/ripples.wgsl"

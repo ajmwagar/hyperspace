@@ -27,6 +27,8 @@ hound = { version = "3", optional = true }
 [features]
 capture = ["gif", "color_quant"]
 render = ["hound"]
+# Multi-buffer simulation pipeline (stateful sim buffers per viewport). Opt-in.
+sim = []
 
 [dev-dependencies]
 naga = { version = "25", features = ["wgsl-in"] }

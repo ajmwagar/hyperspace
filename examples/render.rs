@@ -171,32 +171,127 @@ fn compute_audio_buffer(
     }
 }
 
-/// Simple per-window band energy for the uniform fields (amplitude/bass/mid/high).
-/// Not the full adaptive AGC from src/audio.rs — the scene's look is driven by
-/// the audio_buf the shaders read directly; these uniforms are secondary.
-fn compute_uniform_bands(buf: &[f32; AUDIO_BUFFER_SIZE], sample_rate: u32) -> ScopeBands {
-    // RMS over waveform L as amplitude.
-    let wl = &buf[SPECTRUM_SIZE..SPECTRUM_SIZE + WAVEFORM_SIZE];
-    let rms = (wl.iter().map(|s| s * s).sum::<f32>() / WAVEFORM_SIZE as f32).sqrt();
-    let amplitude = (rms * 2.0).clamp(0.0, 1.0);
+/// Stateful per-frame band + transient analysis for the uniform fields.
+/// Not the full adaptive AGC from src/audio.rs, but close enough that
+/// beat/onset-synced shaders fire offline: spectral-flux onsets, an
+/// energy-threshold beat (kick + low mids), plus sub-bass and presence bands.
+struct BandAnalyzer {
+    sample_rate: u32,
+    prev_spectrum: Vec<f32>,
+    energy_avg: f32,
+    beat: f32,
+    onset: f32,
+    sub_bass: f32,
+    presence: f32,
+    // Beat-phase tracker (a small PLL): a continuous phase that advances at the
+    // running tempo and is nudged toward each detected beat, so downstream
+    // shaders can phase-lock to the track and follow tempo drift.
+    time_acc: f32,
+    period: f32,
+    last_beat_time: f32,
+    beat_phase: f32,
+    prev_beat: f32,
+}
 
-    let bin_hz = sample_rate as f32 / FFT_SIZE as f32;
-    let band = |from_hz: f32, to_hz: f32| -> f32 {
-        let from = (from_hz / bin_hz) as usize;
-        let to = ((to_hz / bin_hz) as usize).min(SPECTRUM_SIZE);
-        if to <= from {
-            return 0.0;
+impl BandAnalyzer {
+    fn new(sample_rate: u32) -> Self {
+        Self {
+            sample_rate,
+            prev_spectrum: vec![0.0; SPECTRUM_SIZE],
+            energy_avg: 0.0,
+            beat: 0.0,
+            onset: 0.0,
+            sub_bass: 0.0,
+            presence: 0.0,
+            time_acc: 0.0,
+            period: 0.5, // 120 BPM until the tracker learns the tempo
+            last_beat_time: 0.0,
+            beat_phase: 0.0,
+            prev_beat: 0.0,
         }
-        buf[from..to].iter().sum::<f32>() / (to - from) as f32
-    };
-    let bass = band(60.0, 150.0).clamp(0.0, 1.0);
-    let mid = band(150.0, 4000.0).clamp(0.0, 1.0);
-    let high = band(4000.0, 16000.0).clamp(0.0, 1.0);
-    ScopeBands {
-        amplitude,
-        bass,
-        mid,
-        high,
+    }
+
+    fn update(&mut self, buf: &[f32; AUDIO_BUFFER_SIZE], dt: f32) -> ScopeBands {
+        let bin_hz = self.sample_rate as f32 / FFT_SIZE as f32;
+        let band = |from_hz: f32, to_hz: f32| -> f32 {
+            let from = (from_hz / bin_hz) as usize;
+            let to = ((to_hz / bin_hz) as usize).min(SPECTRUM_SIZE);
+            if to <= from {
+                return 0.0;
+            }
+            buf[from..to].iter().sum::<f32>() / (to - from) as f32
+        };
+
+        // RMS over waveform L as amplitude.
+        let wl = &buf[SPECTRUM_SIZE..SPECTRUM_SIZE + WAVEFORM_SIZE];
+        let rms = (wl.iter().map(|s| s * s).sum::<f32>() / WAVEFORM_SIZE as f32).sqrt();
+        let amplitude = (rms * 2.0).clamp(0.0, 1.0);
+
+        let bass = band(60.0, 150.0).clamp(0.0, 1.0);
+        let mid = band(150.0, 4000.0).clamp(0.0, 1.0);
+        let high = band(4000.0, 16000.0).clamp(0.0, 1.0);
+        let sub_bass = band(20.0, 60.0).clamp(0.0, 1.0);
+        let presence = band(4000.0, 8000.0).clamp(0.0, 1.0);
+
+        // Spectral flux → onset (positive changes only), like src/audio.rs.
+        let spectrum = &buf[0..SPECTRUM_SIZE];
+        let mut flux = 0.0f32;
+        for i in 0..SPECTRUM_SIZE {
+            let d = spectrum[i] - self.prev_spectrum[i];
+            if d > 0.0 {
+                flux += d;
+            }
+        }
+        flux /= SPECTRUM_SIZE as f32;
+        self.prev_spectrum.copy_from_slice(spectrum);
+        let onset_raw = if flux > 0.0006 { (flux * 120.0).min(1.0) } else { 0.0 };
+        // Instant attack, gradual release.
+        self.onset = onset_raw.max(self.onset * 0.7);
+
+        // Beat: energy over a running average (kick + low mids), gated so it
+        // pulses rather than latches.
+        let energy = bass * 2.0 + mid;
+        if energy > self.energy_avg * 1.4 && self.beat < 0.3 {
+            self.beat = 1.0;
+        } else {
+            self.beat *= 0.80;
+        }
+        self.energy_avg = self.energy_avg * 0.93 + energy * 0.07;
+
+        // Light smoothing on the extra bands.
+        self.sub_bass = self.sub_bass * 0.6 + sub_bass * 0.4;
+        self.presence = self.presence * 0.5 + presence * 0.5;
+
+        // ---- Beat-phase PLL ----
+        self.time_acc += dt;
+        // Advance phase at the current tempo estimate.
+        self.beat_phase += dt / self.period.max(0.1);
+        // On a freshly detected beat (rising edge), learn the period and nudge
+        // the phase toward a whole beat. A gentle nudge keeps the phase smooth.
+        if self.beat > 0.95 && self.prev_beat <= 0.95 {
+            let interval = self.time_acc - self.last_beat_time;
+            if (0.25..1.6).contains(&interval) {
+                self.period = self.period * 0.7 + interval * 0.3;
+            }
+            self.last_beat_time = self.time_acc;
+            let frac = self.beat_phase - self.beat_phase.floor();
+            let err = if frac > 0.5 { frac - 1.0 } else { frac };
+            self.beat_phase -= err * 0.15; // pull ~15% toward the beat
+        }
+        self.prev_beat = self.beat;
+        let phase01 = self.beat_phase - self.beat_phase.floor();
+
+        ScopeBands {
+            amplitude,
+            bass,
+            mid,
+            high,
+            beat: self.beat,
+            onset: self.onset,
+            sub_bass: self.sub_bass,
+            presence: self.presence,
+            beat_phase: phase01,
+        }
     }
 }
 
@@ -231,9 +326,12 @@ async fn run(
         .request_device(&wgpu::DeviceDescriptor::default())
         .await?;
 
-    // Render in non-srgb RGBA so the bytes we read back are exactly what we
-    // feed ffmpeg as rawvideo rgba.
-    let format = wgpu::TextureFormat::Rgba8Unorm;
+    // Render the final blit into an sRGB target. The shaders' colours are
+    // authored for an sRGB display (like the live engine's surface), so the
+    // blit's linear output must be sRGB-encoded on store; the bytes we read
+    // back are then the correct display values to hand ffmpeg as rawvideo rgba.
+    // (Without this the whole render comes out gamma-darkened.)
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
 
     // The scope renderer draws into this target each frame; we copy it back.
     let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -313,6 +411,7 @@ async fn run(
     let mut scratch = vec![Complex::default(); fft.get_inplace_scratch_len()];
 
     let mut audio_data = [0.0f32; AUDIO_BUFFER_SIZE];
+    let mut analyzer = BandAnalyzer::new(audio.sample_rate);
 
     for frame_idx in 0..total_frames {
         let time = frame_idx as f32 / fps as f32;
@@ -320,7 +419,7 @@ async fn run(
         let center = ((time as f64) * audio.sample_rate as f64) as usize;
 
         compute_audio_buffer(&audio, center, &fft, &mut scratch, &mut audio_data);
-        let bands = compute_uniform_bands(&audio_data, audio.sample_rate);
+        let bands = analyzer.update(&audio_data, 1.0 / fps as f32);
 
         scope.render(&device, &queue, &target_view, &audio_data, time, bands);
 
