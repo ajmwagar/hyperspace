@@ -52,6 +52,9 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 <td><img src="assets/apollonian.gif" width="320"><br><b>apollonian</b><br>Nested-sphere Apollonian gasket</td>
 <td><img src="assets/ripples.gif" width="320"><br><b>ripples</b><br>Raindrop wave-packets, caustic crests</td>
 </tr>
+<tr>
+<td><img src="assets/sierpinski.gif" width="320"><br><b>sierpinski</b><br>Raymarched Sierpinski-tetrahedron lattice</td>
+</tr>
 </table>
 
 ## Architecture
