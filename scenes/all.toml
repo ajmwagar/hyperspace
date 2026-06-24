@@ -1,4 +1,4 @@
-# All shaders — 28 shaders, run on a 6x5 grid.
+# All shaders — 29 shaders, run on a 6x5 grid.
 # Keep this up to date as new shaders are added.
 # Run with: cargo run -- scenes/all.toml 6x5
 
@@ -91,3 +91,6 @@ shader = "shaders/ripples.wgsl"
 
 [grid_27]
 shader = "shaders/sierpinski.wgsl"
+
+[grid_28]
+shader = "shaders/sierpinski_dive.wgsl"
