@@ -256,6 +256,39 @@ raw L/R waveform — and uploaded to the same `[0..512)=spectrum,
 [512..1024)=wave L, [1024..1536)=wave R` buffer the live engine uses. The output
 mp4 contains both a video and an audio stream.
 
+### Montage (beat-cut reel)
+
+`scripts/montage.sh` builds an audio-reactive shader montage: a playlist of
+shaders, each clip beat-aligned and joined with cross-dissolves, exported with a
+named quality/aspect profile. It renders each clip with a couple of warm-up bars
+(the offline analyser needs to lock onto the beat before the visible part) and
+keeps the dissolves on the downbeat, so every shader's reactive bar lands on the
+kick.
+
+```sh
+# 9:16 reel at upload bitrate
+TRACK=track.mp3 WS=181.98 BPM=124.53 ASPECT=9:16 PROFILE=high scripts/montage.sh
+
+# 4:5 archival master, custom playlist
+TRACK=track.mp3 WS=181.98 BPM=124.53 ASPECT=4:5 PROFILE=master \
+  PLAYLIST="sierpinski_dive:2 mandelbulb:2 caustics:1 plato_rave:1 sierpinski:2" \
+  scripts/montage.sh
+```
+
+`WS` is the window start (seconds, on a downbeat); `BPM` derives the bar length.
+Playlist entries are `shader:bars` (heroes get more bars). Export profiles:
+
+| profile  | encode                | use |
+|----------|-----------------------|-----|
+| `master` | x264 CRF 12, 320k AAC | archival / re-edit master |
+| `high`   | x264 CRF 16, 256k AAC | crisp upload (IG/web) |
+| `web`    | x264 CRF 27, 192k AAC | small preview / chat |
+| `prores` | ProRes 422 HQ `.mov`  | import into an NLE |
+
+Aspect presets (`ASPECT`) drive the render resolution — `9:16` (1080×1920),
+`4:5` (1080×1350), `1:1` (1080×1080), `16:9` (1920×1080) — so each ratio is
+rendered natively, not cropped.
+
 ## Stack
 
 Rust, wgpu, WGSL, winit, cpal, rustfft, mlua (Lua 5.4), rppal (Pi GPIO/SPI).
