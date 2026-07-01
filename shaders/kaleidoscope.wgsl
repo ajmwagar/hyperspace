@@ -114,24 +114,28 @@ fn chamber(p0: vec2<f32>) -> vec3<f32> {
     let n = fbm(p * 1.6 + w * 1.8);
     var col = palette(n * 1.4 + t * 0.05 + u.mid * 0.3) * (0.35 + 0.5 * n);
 
-    // Jewelled beads: glowing coloured dots on a jittered grid that drifts.
-    let scale = 2.4;
-    let g = p * scale;
-    let cell = floor(g);
-    for (var j = -1; j <= 1; j = j + 1) {
-        for (var i = -1; i <= 1; i = i + 1) {
-            let id = cell + vec2<f32>(f32(i), f32(j));
-            let h = hash2(id);
-            // bead centre drifts within its cell
-            let centre = id + 0.5 + 0.35 * vec2<f32>(sin(t * (0.4 + h.x) + h.x * TAU),
-                                                     cos(t * (0.4 + h.y) + h.y * TAU));
-            let d = length(g - centre);
-            let rad = 0.28 + 0.14 * h.x;
-            let bead = smoothstep(rad, rad * 0.15, d);
-            let bcol = palette(h.y + t * 0.08);
-            // faceted highlight (glassy) + audio sparkle
-            let hi = pow(smoothstep(rad, 0.0, d), 6.0);
-            col = col + bcol * bead * (0.7 + u.amplitude * 0.8) + vec3<f32>(1.0) * hi * (0.3 + u.high * 1.2) * h.x;
+    // Jewelled beads: glowing coloured dots on jittered grids that drift. Two
+    // layers at different scales pack the field with big and small jewels (a
+    // real scope is dense with mixed-size chips of glass).
+    for (var layer = 0; layer < 2; layer = layer + 1) {
+        let scale = select(2.4, 5.1, layer == 1);   // coarse then fine
+        let lseed = f32(layer) * 17.3;
+        let g = p * scale + lseed;
+        let cell = floor(g);
+        for (var j = -1; j <= 1; j = j + 1) {
+            for (var i = -1; i <= 1; i = i + 1) {
+                let id = cell + vec2<f32>(f32(i), f32(j));
+                let h = hash2(id + lseed);
+                let centre = id + 0.5 + 0.35 * vec2<f32>(sin(t * (0.4 + h.x) + h.x * TAU),
+                                                         cos(t * (0.4 + h.y) + h.y * TAU));
+                let d = length(g - centre);
+                let rad = 0.28 + 0.14 * h.x;
+                let bead = smoothstep(rad, rad * 0.15, d);
+                let bcol = palette(h.y + t * 0.08 + f32(layer) * 0.25);
+                let hi = pow(smoothstep(rad, 0.0, d), 6.0);
+                let amp = select(0.7, 0.5, layer == 1);  // fine layer a touch dimmer
+                col = col + bcol * bead * (amp + u.amplitude * 0.8) + vec3<f32>(1.0) * hi * (0.3 + u.high * 1.2) * h.x;
+            }
         }
     }
     return col;
@@ -150,15 +154,23 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     a = a - seg * floor(a / seg);
     a = abs(a - seg * 0.5);                              // mirror inside the wedge
 
-    // Log-radius tube: repeat in log(r) so the mandala nests in receding rings,
-    // slowly zooming inward. Mirror each ring for continuity.
+    // Radial ring tiling. A log term gives the receding-tube depth near the
+    // centre; a linear `r` term makes the rings pile up ever denser toward the
+    // rim, so the corners go wild with tightly-packed reflections like a real
+    // scope (instead of smoothing out into big lobes).
     var r = length(p);
     let zoom = 1.0 - u.bass * 0.10 * sin(u.time * 0.6);  // bass breathes the zoom
-    var lr = log(r + 1e-3) * 1.6 - u.time * 0.15;
+    var lr = log(r + 1e-3) * 1.7 + r * 2.6 - u.time * 0.15;
+    // Break the perfectly-circular rings with a symmetric wobble (uses the
+    // folded angle + radius, so mirror symmetry survives) that grows toward the
+    // rim — the corners churn into organic jewelled chaos instead of smooth
+    // bands. Beat cranks the turbulence.
+    let wob = fbm(vec2<f32>(a * 4.0, r * 5.0 - u.time * 0.2));
+    lr = lr + (wob - 0.5) * (0.35 + r * 1.1) * (1.0 + u.beat * 0.6);
     lr = abs(fract(lr) - 0.5) * 2.0;                     // mirrored ring coordinate
 
     // Reconstruct a chamber sample point from (folded angle, ring coordinate).
-    let rr = exp((lr - 0.5) * 1.2) * zoom;
+    let rr = exp((lr - 0.5) * 1.15) * zoom;
     let q = vec2<f32>(cos(a), sin(a)) * rr;
 
     var col = chamber(q);
@@ -171,10 +183,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let core = smoothstep(0.5, 0.0, r);
     col = col + col * core * (0.25 + u.beat * 0.6);
 
-    // Tone + gentle vignette.
+    // Tone + very light vignette (keep the busy corners bright, like an IRL
+    // scope where the whole field is packed edge to edge).
     col = col / (1.0 + col * 0.5);
     col = pow(col, vec3<f32>(0.85));
-    let vig = 1.0 - dot(in.uv - 0.5, in.uv - 0.5) * 0.5;
+    let vig = 1.0 - dot(in.uv - 0.5, in.uv - 0.5) * 0.15;
     col = col * vig;
 
     return vec4<f32>(max(col, vec3<f32>(0.0)), 1.0);
