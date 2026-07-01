@@ -55,6 +55,7 @@ Rust. wgpu. WGSL shaders. Lua scripting. Composite out to CRTs via Raspberry Pi.
 <tr>
 <td><img src="assets/sierpinski.gif" width="320"><br><b>sierpinski</b><br>Raymarched Sierpinski-tetrahedron lattice</td>
 <td><img src="assets/sierpinski_dive.gif" width="320"><br><b>sierpinski_dive</b><br>Seamless infinite zoom into the tetrahedron</td>
+<td><img src="assets/kaleidoscope.gif" width="320"><br><b>kaleidoscope</b><br>Mirror-tube mandala of tumbling glass beads</td>
 </tr>
 </table>
 
