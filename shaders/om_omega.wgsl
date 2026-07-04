@@ -562,8 +562,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let aspect = u.resolution.x / u.resolution.y;
     var p = in.uv - 0.5;
     if (aspect >= 1.0) { p.x = p.x * aspect; } else { p.y = p.y / aspect; }
-    p = p * 2.0;
-    p.y = -p.y;   // glyph space is y-up
+    p = p * 2.0;   // glyph data is y-up and matches the offscreen render
 
     // Loop t: 0->1->0 smooth, with brief holds on each symbol. beat quickens it.
     let period = 8.0;
@@ -582,7 +581,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let sil_a = vec3<f32>(0.55, 0.60, 0.68);
     let sil_b = vec3<f32>(0.93, 0.96, 1.00);
     var col = mix(sil_a, sil_b, core);
-    let sheen = 0.72 + 0.55 * (0.5 - p.y * 0.5 / 1.0);   // top-lit metallic
+    let sheen = 0.72 + 0.55 * (0.5 + p.y * 0.5);   // top-lit metallic
     col = col * clamp(sheen, 0.4, 1.4);
     let glow = exp(-max(field, 0.0) / 0.09);
     let glowc = vec3<f32>(0.42, 0.52, 0.68) * glow * (0.85 + u.amplitude * 0.5);
