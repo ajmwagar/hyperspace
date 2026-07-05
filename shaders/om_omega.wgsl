@@ -2,8 +2,8 @@
 // hyperspace. Each glyph's outline is baked in as line segments (below); the
 // shader computes the signed distance to each glyph per-pixel, blends the two
 // fields over time, and shades the result as polished silver. A self-contained
-// looping animation — no textures, no audio needed (though beat nudges it).
-//   loop: ~8s, ॐ -> Ω -> ॐ, seamless. amplitude/beat add a little life.
+// looping animation — no textures, no audio: purely time-driven and static.
+//   loop: ~8s, ॐ -> Ω -> ॐ, seamless.
 
 struct Uniforms {
     time: f32, delta_time: f32, resolution: vec2<f32>,
@@ -590,13 +590,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var col = mix(sil_a, sil_b, core);
     let sheen = 0.72 + 0.55 * (0.5 + p.y * 0.5);   // top-lit metallic
     col = col * clamp(sheen, 0.4, 1.4);
-    let glow = exp(-max(field, 0.0) / 0.09);
-    let glowc = vec3<f32>(0.42, 0.52, 0.68) * glow * (0.85 + u.amplitude * 0.5);
+    let glow = exp(-max(field, 0.0) / 0.055);            // tight, restrained halo
+    let glowc = vec3<f32>(0.42, 0.52, 0.68) * glow * 0.45;
     let rim = exp(-(field * field) / (2.0 * (px * 2.2) * (px * 2.2)));
     let rimc = vec3<f32>(1.0) * rim * 0.9;
     var out = vec3<f32>(0.035, 0.04, 0.05) + glowc;
     out = mix(out, col, fill);
-    out = out + rimc + col * fill * u.beat * 0.3;
+    out = out + rimc;                                    // static — no audio pulse
     let vig = 1.0 - dot(in.uv - 0.5, in.uv - 0.5) * 0.5;
     out = out * vig;
     return vec4<f32>(clamp(out, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
