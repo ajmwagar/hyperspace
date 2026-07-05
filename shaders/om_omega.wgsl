@@ -571,8 +571,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var t = clamp((pp - 0.12) / 0.76, 0.0, 1.0);
     t = t * t * (3.0 - 2.0 * t);
 
-    // Blend the two signed fields.
-    let field = mix(sd_om(p), sd_og(p), t);
+    // Blend the two signed fields. Both glyphs fit within radius ~0.75, so for
+    // pixels well outside that we skip the per-segment loops entirely (the field
+    // is a large positive value there — no fill, negligible glow).
+    var field: f32;
+    if (length(p) > 1.25) {
+        field = length(p) - 0.7;
+    } else {
+        field = mix(sd_om(p), sd_og(p), t);
+    }
 
     // ---- polished silver shading (field is in normalized units) ----
     let px = 2.0 / u.resolution.y;                       // ~1 pixel in p-space
