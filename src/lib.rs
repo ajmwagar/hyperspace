@@ -17,4 +17,4 @@ pub mod text;
 pub mod uniforms;
 pub mod video;
 
-pub use offscreen::{ScopeBands, ScopeRenderer, AUDIO_BUFFER_SIZE};
+pub use offscreen::{ScopeBands, ScopePalette, ScopeRenderer, AUDIO_BUFFER_SIZE};

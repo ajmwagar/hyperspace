@@ -29,6 +29,18 @@ pub struct Uniforms {
     pub onset: f32,     // spectral flux — fires on transients/note onsets
     pub sub_bass: f32,  // 20-60Hz — sub rumble
     pub presence: f32,  // 4-8kHz — vocal/cymbal shimmer
+    // Palette (RGBA 0-1). Everything above this point is 128 bytes, which is
+    // already 16-byte aligned, so these vec4s need no padding in front.
+    //
+    // Shaders that want to follow a caller's brand read these instead of
+    // hardcoding; the defaults are the oscilloscope's own phosphor values, so
+    // a shader reading them with no caller override looks exactly as it did.
+    /// Primary trace colour.
+    pub trace_a: [f32; 4],
+    /// Secondary trace colour (the oscilloscope draws two).
+    pub trace_b: [f32; 4],
+    /// Graticule / grid lines.
+    pub grid: [f32; 4],
 }
 
 impl Uniforms {
@@ -57,6 +69,9 @@ impl Default for Uniforms {
             mid_r: 0.0,
             high_l: 0.0,
             high_r: 0.0,
+            trace_a: [0.2, 1.0, 0.3, 1.0],
+            trace_b: [0.15, 0.5, 1.0, 1.0],
+            grid: [0.0, 0.04, 0.015, 1.0],
             onset: 0.0,
             sub_bass: 0.0,
             presence: 0.0,

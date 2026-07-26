@@ -15,6 +15,18 @@
 
 use crate::scene::{LayoutMode, SceneConfig, Viewport};
 use crate::uniforms::Uniforms;
+
+/// Trace/grid colours a caller can impose on the scene, so a render can follow
+/// a brand instead of the shader's built-in phosphor palette. RGBA, 0-1.
+///
+/// `None` anywhere means "keep the shader default", which is what makes this
+/// safe to add: an existing caller that sets nothing renders unchanged.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ScopePalette {
+    pub trace_a: Option<[f32; 4]>,
+    pub trace_b: Option<[f32; 4]>,
+    pub grid: Option<[f32; 4]>,
+}
 use std::path::Path;
 use wgpu::util::DeviceExt;
 
@@ -52,6 +64,8 @@ pub struct ScopeRenderer {
     blit_bgl: wgpu::BindGroupLayout,
     width: u32,
     height: u32,
+    /// Caller-imposed colours; unset fields fall back to the shader defaults.
+    palette: ScopePalette,
 }
 
 impl ScopeRenderer {
@@ -128,7 +142,15 @@ impl ScopeRenderer {
             blit_bgl,
             width,
             height,
+            palette: ScopePalette::default(),
         })
+    }
+
+    /// Impose trace/grid colours on this scope. Unset fields keep the shader's
+    /// own defaults, so this is additive: a caller that never calls it renders
+    /// exactly as before.
+    pub fn set_palette(&mut self, palette: ScopePalette) {
+        self.palette = palette;
     }
 
     /// Render one frame into `target`.
@@ -149,6 +171,7 @@ impl ScopeRenderer {
     ) {
         queue.write_buffer(&self.audio_buf_gpu, 0, bytemuck::cast_slice(audio_buf));
 
+        let defaults = Uniforms::default();
         let u = Uniforms {
             time,
             delta_time: 1.0 / 30.0,
@@ -159,6 +182,9 @@ impl ScopeRenderer {
             high: bands.high,
             amplitude_l: bands.amplitude,
             amplitude_r: bands.amplitude,
+            trace_a: self.palette.trace_a.unwrap_or(defaults.trace_a),
+            trace_b: self.palette.trace_b.unwrap_or(defaults.trace_b),
+            grid: self.palette.grid.unwrap_or(defaults.grid),
             ..Uniforms::default()
         };
         queue.write_buffer(&self.uniform_buf, 0, bytemuck::bytes_of(&u));

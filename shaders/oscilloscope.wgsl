@@ -25,6 +25,11 @@ struct Uniforms {
     onset: f32,
     sub_bass: f32,
     presence: f32,
+    // Caller palette. Defaults (set host-side) are this shader's own original
+    // phosphor values, so reading them changes nothing unless a caller sets them.
+    trace_a: vec4<f32>,
+    trace_b: vec4<f32>,
+    grid: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -70,15 +75,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let gx = abs(fract(uv.x / grid_spacing + 0.5) - 0.5);
     let gy = abs(fract(uv.y / grid_spacing + 0.5) - 0.5);
     let grid_line = smoothstep(0.003, 0.0, gx) + smoothstep(0.003, 0.0, gy);
-    col += vec3<f32>(0.0, 0.04, 0.015) * grid_line;
+    col += u.grid.rgb * grid_line;
 
     // Center cross
     let cx = smoothstep(0.002, 0.0, abs(uv.x - 0.5));
     let cy = smoothstep(0.002, 0.0, abs(uv.y - 0.5));
-    col += vec3<f32>(0.0, 0.07, 0.025) * (cx + cy);
+    col += u.grid.rgb * 1.75 * (cx + cy);
 
-    let phosphor_green = vec3<f32>(0.2, 1.0, 0.3);
-    let phosphor_blue = vec3<f32>(0.15, 0.5, 1.0);
+    let phosphor_green = u.trace_a.rgb;
+    let phosphor_blue = u.trace_b.rgb;
 
     // === Upper half: time-domain waveform ===
     if uv.y > 0.52 {
