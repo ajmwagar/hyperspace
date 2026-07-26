@@ -1,0 +1,21 @@
+# Lesson — an undistorted scope, for teaching rather than for looks.
+#
+# `composed.toml` runs the oscilloscope through flow_spiral (a flow-field
+# warp) and colormap_neon. That is the right choice for an artistic reel and
+# the wrong one for a lesson: the warp bends a hard-clipped flat top into a
+# rounded hump, so narration saying "sliced off flat, like it hit a ceiling"
+# plays over a picture contradicting it. The colormap's chroma split also
+# doubles every edge, which reads as thickness rather than shape.
+#
+# So: same oscilloscope shader, no post chain. The trace is what it is.
+
+[audio]
+device = "Blackhole 2ch"
+channels = "0,1"
+
+[center]
+shader = "shaders/oscilloscope.wgsl"
+
+[sides]
+shader = "shaders/oscilloscope.wgsl"
+symmetric = true
